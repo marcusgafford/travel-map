@@ -138,6 +138,10 @@ run picks them up, 15 at a time. Column A can be blank too.
   volume, not zero.
 - **Caption-only extraction.** If a video shows a place without naming it in the
   caption, nothing gets extracted — it lands in `no-places`.
+- **Some venues can't be geocoded.** OpenStreetMap often doesn't know small cafés and
+  bars by name. On a miss the job asks Claude (web search) for the street address and
+  geocodes that, which recovers most of them; whatever still fails is listed under
+  *Could not be geocoded* in the run summary. Add those by hand if you want them.
 
 ## Alternative: run processing on GitHub Actions
 
@@ -185,6 +189,8 @@ GitHub emails you first, and one click re-enables them.
   anything errored, which triggers GitHub's own failure email. Want the per-run "3 pins
   added" email regardless, add a `send-mail` step or POST to ntfy in the workflow.
 - No batch cap, no 4.5-minute budget — it processes every unprocessed row.
+- Rows marked `error:` retry themselves on the next run. **Run workflow** has a
+  **force** checkbox that reprocesses *every* row, flags ignored — handy after a fix.
 - `concurrency: process-inbox` in the workflow is what stops two runs overlapping (the
   Apps Script version uses `LockService` for the same thing).
 
