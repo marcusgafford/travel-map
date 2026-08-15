@@ -301,7 +301,7 @@ async function placesLookup(q) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function savePlace(place, cap, url, pins, missed, ix) {
+async function savePlace(place, cap, url, pins, missed, ix, parked) {
   await sleep(1000);                              // Nominatim: 1 req/sec
   // Cheapest source first: OSM (free) -> Google Places (free tier) -> a paid web
   // search for the street address, which we then geocode. Coordinates always come
@@ -318,9 +318,14 @@ async function savePlace(place, cap, url, pins, missed, ix) {
     }
   }
   if (!g) {
+    missed.push(place);
+    // Don't park something that's already on the map (a re-run that fails to geocode
+    // an existing pin), and don't re-park the same name every run.
+    const key = norm(place);
+    if (parked.has(key) || pins.some((p) => p.name === key)) return null;
+    parked.add(key);
     // Park it with whatever we learned so it can be looked up by hand, rather than
     // leaving it as a name in a log nobody reads.
-    missed.push(place);
     await append(UNRESOLVED, rowFor(await headerOf(UNRESOLVED), {
       place, description: (found || {}).description || '', first_url: url,
       timestamp: new Date().toISOString(),
@@ -368,7 +373,11 @@ async function main() {
   const pins = (await get('Pins')).slice(1)
     .filter((r) => r[pinsIx.lat] || r[pinsIx.lng])
     .map((r, i) => ({ row: i + 2, addr: norm(`${r[pinsIx.place]} ${r[pinsIx.city]}`),
+      name: norm(r[pinsIx.place]),
       lat: +r[pinsIx.lat], lng: +r[pinsIx.lng], city: r[pinsIx.city] }));
+
+  const uix = await headerOf(UNRESOLVED);
+  const parked = new Set((await get(UNRESOLVED)).slice(1).map((r) => norm(r[uix.place])));
 
   const added = [], empty = [], failed = [], missed = [];
   for (let n = 1; n < inbox.length; n++) {
@@ -387,7 +396,7 @@ async function main() {
         continue;
       }
       for (const p of places) {
-        const name = await savePlace(p, cap, url, pins, missed, pinsIx);
+        const name = await savePlace(p, cap, url, pins, missed, pinsIx, parked);
         if (name) added.push(name);
       }
       await put('Inbox', `C${n + 1}`, 'yes');
