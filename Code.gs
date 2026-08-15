@@ -134,10 +134,11 @@ function extractPlaces_(caption) {
   return parseArray_(out);
 }
 
-function describe_(place, caption) {
+/** Deliberately not given the video caption — descriptions come from search only. */
+function describe_(place) {
   return claude_([{ role: 'user', content:
-    'Search the web, then write 1-2 original sentences describing "' + place + '" — what it ' +
-    'is and what it is known for. Context it was mentioned in: ' + caption + '\n\n' +
+    'Search the web for "' + place + '", then write 1-2 original sentences describing ' +
+    'what it is and what it is known for. Use only what you find about the place itself. ' +
     'Reply with only the description, no preamble.' }],
     [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
 }
