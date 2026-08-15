@@ -21,6 +21,17 @@ var SEEN_COL = 3;            // seen_from, 1-based
 
 // ---------------------------------------------------------------- intake
 
+/** Open the /exec URL in a browser to see which sheet the doorbell is attached to. */
+function doGet() {
+  var inbox = ss_().getSheetByName(INBOX);
+  return json_({
+    ok: true,
+    attached_to: ss_().getName(),
+    inbox_rows: inbox ? Math.max(inbox.getLastRow() - 1, 0) : 'no Inbox tab',
+    tabs: ss_().getSheets().map(function (s) { return s.getName(); })
+  });
+}
+
 function doPost(e) {
   var body = {};
   try { body = JSON.parse(e.postData.contents); } catch (err) {}
