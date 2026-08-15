@@ -12,6 +12,8 @@ var MODEL = 'claude-sonnet-5';
 var BATCH = 15;              // Inbox rows per run (trigger hard-caps at 6 min)
 var TIME_BUDGET_MS = 4.5 * 60 * 1000;
 var DUPE_METERS = 60;
+var BROAD = ['city', 'town', 'village', 'municipality', 'county', 'state', 'province',
+             'region', 'country', 'continent', 'administrative', 'postcode'];
 
 var INBOX = 'Inbox';
 var PINS = 'Pins';
@@ -127,10 +129,15 @@ function caption_(url) {
 function extractPlaces_(caption) {
   var out = claude_([{ role: 'user', content:
     'Caption from a short travel video:\n\n' + caption + '\n\n' +
-    'List every distinct real-world place (restaurant, bar, museum, park, landmark, ' +
-    'neighbourhood) that is named or clearly implied. Include the city or country in each ' +
-    'entry so it can be geocoded. Do not merge separate places into one entry. If none, ' +
-    'return an empty list. Reply with ONLY a JSON array of strings.' }], null, 512);
+    'List the specific places worth pinning on a personal travel map: somewhere you can ' +
+    'actually walk into or stand in front of — a restaurant, bar, cafe, shop, hotel, ' +
+    'museum, park, viewpoint, beach, trail or named landmark. Include the city and ' +
+    'country in each entry so it can be geocoded, and do not merge separate places into ' +
+    'one entry. Use judgement about what is worth a pin: skip whole cities, regions, ' +
+    'countries, districts and neighbourhoods, skip unnamed generic mentions like "the ' +
+    'airport", and skip the obvious context of the trip rather than a destination in ' +
+    'it. If nothing qualifies, return an empty list. Reply with ONLY a JSON array of ' +
+    'strings.' }], null, 512);
   return parseArray_(out);
 }
 
@@ -170,6 +177,8 @@ function geocode_(q) {
   var a = JSON.parse(res.getContentText());
   if (!a.length) return null;
   var r = a[0], ad = r.address || {};
+  // Backstop for the extraction prompt: never pin a whole city/region/country.
+  if (r.category === 'boundary' || BROAD.indexOf(r.addresstype) > -1) return null;
   var city = ad.city || ad.town || ad.village || ad.municipality || ad.county || ad.state || '';
   return {
     lat: +r.lat, lng: +r.lon, address: r.display_name,

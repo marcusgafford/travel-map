@@ -14,6 +14,8 @@ const assert = require('node:assert');
 
 const MODEL = 'claude-sonnet-5';
 const DUPE_METERS = 60;
+const BROAD = new Set(['city', 'town', 'village', 'municipality', 'county', 'state',
+  'province', 'region', 'country', 'continent', 'administrative', 'postcode']);
 const PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'caption', 'place',
   'description', 'lat', 'lng', 'city', 'label'];
 
@@ -165,11 +167,16 @@ async function claude(content, tools, max_tokens) {
 
 const extractPlaces = async (cap) => parseArray(await claude(
   `Caption from a short travel video:\n\n${cap}\n\n` +
-  'List every distinct real-world place (restaurant, bar, museum, park, landmark, ' +
-  'neighbourhood) that is named or clearly implied. Include the city or country in each ' +
-  'entry so it can be geocoded. Do not merge separate places into one entry. Do not ' +
-  'return a city, region or country on its own — only specific places within one. ' +
-  'If none, return an empty list. Reply with ONLY a JSON array of strings.', null, 512));
+  'List the specific places worth pinning on a personal travel map: somewhere you can ' +
+  'actually walk into or stand in front of — a restaurant, bar, cafe, shop, hotel, ' +
+  'museum, park, viewpoint, beach, trail or named landmark. Include the city and ' +
+  'country in each entry so it can be geocoded, and do not merge separate places into ' +
+  'one entry.\n\nUse judgement about what is worth a pin. Skip anything a traveller ' +
+  'would not need marked: whole cities, regions, countries, districts and ' +
+  'neighbourhoods; generic mentions like "the airport" or "a rooftop bar" with no ' +
+  'name; and the obvious context of the trip rather than a destination in it. ' +
+  'If nothing qualifies, return an empty list. Reply with ONLY a JSON array of ' +
+  'strings.', null, 512));
 
 // Deliberately does NOT see the video caption — the description must come from
 // searching for the place itself, not from rewording someone's post.
@@ -196,6 +203,12 @@ async function geocode(q) {
   if (!res.ok) throw new Error(`Nominatim ${res.status} for "${q}"`);
   const [r] = await res.json();
   if (!r) return null;
+  // Backstop for the extraction prompt: never pin a whole city/region/country, even
+  // if one slips through. OSM tags those as boundaries or admin place types.
+  if (r.category === 'boundary' || BROAD.has(r.addresstype)) {
+    console.log(`skipping "${q}" — too broad (${r.addresstype})`);
+    return null;
+  }
   const ad = r.address || {};
   return {
     lat: +r.lat, lng: +r.lon, address: r.display_name,
@@ -290,7 +303,7 @@ async function main() {
     `## Travel map: ${added.length} new pin(s)`, '',
     `**Added (${added.length}):** ${added.join(', ') || 'none'}`,
     `**No place found (${empty.length}):** ${empty.join(', ') || 'none'}`,
-    `**Could not be geocoded (${missed.length}):** ${missed.join(', ') || 'none'}`,
+    `**Not pinned — too broad or not found (${missed.length}):** ${missed.join(', ') || 'none'}`,
     `**Errors (${failed.length}):**`, ...failed.map((f) => `- ${f}`),
   ].join('\n');
   console.log(summary);
