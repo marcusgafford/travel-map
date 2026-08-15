@@ -59,6 +59,8 @@ one from starting, so batches never overlap.
 
 ## 5. Deploy the Web App
 
+> Click-by-click version of steps 5 and 6: [SETUP-PHONE.md](SETUP-PHONE.md).
+
 Deploy → New deployment → type **Web app**:
 
 - Execute as: **Me**
