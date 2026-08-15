@@ -219,6 +219,7 @@ async function main() {
   const meta = await (await sheets()).spreadsheets.get({ spreadsheetId: ID(), fields: 'properties.title' });
   const inbox = await get('Inbox', 'A:C');
   console.log(`reading "${meta.data.properties.title}" — ${Math.max(inbox.length - 1, 0)} inbox row(s)`);
+  console.log('DEBUG ' + JSON.stringify(inbox.slice(0, 5)));
   const pins = (await get('Pins')).slice(1)
     .filter((r) => r[6] || r[7])
     .map((r, i) => ({ row: i + 2, addr: norm(`${r[4]} ${r[8]}`), lat: +r[6], lng: +r[7], city: r[8] }));
