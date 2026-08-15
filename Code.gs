@@ -154,9 +154,7 @@ function describe_(place) {
 /** Reads the researched description rather than guessing from the name. */
 function categoryOf_(place, description) {
   return claude_([{ role: 'user', content:
-    description + '
-
-Given only that, what kind of place is "' + place + '"? Reply ' +
+    description + '\n\nGiven only that, what kind of place is "' + place + '"? Reply ' +
     'with 1-3 words, e.g. "Coffee shop", "Tapas bar", "Museum", "Park". No punctuation, ' +
     'no sentence.' }], null, 32);
 }
