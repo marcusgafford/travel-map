@@ -104,7 +104,7 @@ function savePlace_(place, caption, url, pins) {
     return null;
   }
 
-  var desc = describe_(place, caption);
+  var desc = describe_(place);
   var row = [new Date(), url, url, caption, place, desc, g.lat, g.lng, g.city];
   tab_(PINS).appendRow(row);
   cityTab_(g.city).appendRow(row);

@@ -171,9 +171,11 @@ const extractPlaces = async (cap) => parseArray(await claude(
   'return a city, region or country on its own — only specific places within one. ' +
   'If none, return an empty list. Reply with ONLY a JSON array of strings.', null, 512));
 
-const describe = (place, cap) => claude(
-  `Search the web, then write 1-2 original sentences describing "${place}" — what it is ` +
-  `and what it is known for. Context it was mentioned in: ${cap}\n\n` +
+// Deliberately does NOT see the video caption — the description must come from
+// searching for the place itself, not from rewording someone's post.
+const describe = (place) => claude(
+  `Search the web for "${place}", then write 1-2 original sentences describing what it ` +
+  'is and what it is known for. Use only what you find about the place itself. ' +
   'Reply with only the description, no preamble.',
   [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
 
@@ -238,7 +240,7 @@ async function savePlace(place, cap, url, pins, missed) {
   // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
   const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
   const row = [new Date().toISOString(), url, url, flat(cap), place,
-    flat(await describe(place, cap)), g.lat, g.lng, g.city,
+    flat(await describe(place)), g.lat, g.lng, g.city,
     label(await categoryOf(place), place)];
   await append('Pins', row);
   await append(await cityTab(g.city), row);
@@ -297,6 +299,20 @@ async function main() {
   }
   // ponytail: failing the job is the notification — GitHub already emails on failure.
   if (failed.length) process.exit(1);
+}
+
+/** Rewrite every description from a fresh web search, ignoring the video caption. */
+async function redescribe() {
+  for (const t of await titles()) {
+    const rows = await get(t);
+    if (!rows.length || rows[0][4] !== 'place') continue;        // Pins / city tabs only
+    for (let n = 1; n < rows.length; n++) {
+      if (!rows[n][4]) continue;
+      const text = String(await describe(rows[n][4])).replace(/\s*\n+\s*/g, ' ').trim();
+      await put(t, `F${n + 1}`, text);
+      console.log(`${t} row ${n + 1}: ${text.slice(0, 90)}`);
+    }
+  }
 }
 
 /** Fill the label column on rows written before it existed. Idempotent. */
@@ -364,4 +380,5 @@ const fail = (e) => { console.error(e); process.exit(1); };
 if (process.argv.includes('--selfcheck')) selfcheck();
 else if (process.argv.includes('--flatten')) flattenExisting().catch(fail);
 else if (process.argv.includes('--relabel')) relabel().catch(fail);
+else if (process.argv.includes('--redescribe')) redescribe().catch(fail);
 else main().catch(fail);
