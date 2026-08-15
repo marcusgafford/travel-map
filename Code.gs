@@ -8,7 +8,9 @@
  * Run setup() once, then installTrigger() once. See README.md.
  */
 
+// Extraction decides what deserves a pin; the per-place calls are simple and frequent.
 var MODEL = 'claude-sonnet-5';
+var CHEAP_MODEL = 'claude-haiku-4-5';
 var BATCH = 15;              // Inbox rows per run (trigger hard-caps at 6 min)
 var TIME_BUDGET_MS = 4.5 * 60 * 1000;
 var DUPE_METERS = 60;
@@ -92,7 +94,12 @@ function processInbox() {
 /** Geocode, dedupe, describe, append. Returns the place name if a new pin was added. */
 function savePlace_(place, caption, url, pins) {
   Utilities.sleep(1000);                        // Nominatim: 1 req/sec
-  var g = geocode_(place);
+  var g = geocode_(place), found = null;
+  if (!g) {
+    // Reuse this one searched call for both the address and the description.
+    found = research_(place);
+    if (found.address) { Utilities.sleep(1000); g = geocode_(found.address); }
+  }
   if (!g) return null;
 
   var hit = findDupe_(pins, g);
@@ -106,7 +113,7 @@ function savePlace_(place, caption, url, pins) {
     return null;
   }
 
-  var desc = describe_(place);
+  var desc = (found || research_(place)).description;
   var row = [place, desc, g.lat, g.lng, g.city,
              label_(categoryOf_(place, desc), place), new Date(), url, url];
   tab_(PINS).appendRow(row);
@@ -128,7 +135,7 @@ function caption_(url) {
 }
 
 function extractPlaces_(caption) {
-  var out = claude_([{ role: 'user', content:
+  var out = claude_(MODEL, [{ role: 'user', content:
     'Caption from a short travel video:\n\n' + caption + '\n\n' +
     'List the specific places worth pinning on a personal travel map: somewhere you can ' +
     'actually walk into or stand in front of — a restaurant, bar, cafe, shop, hotel, ' +
@@ -142,18 +149,33 @@ function extractPlaces_(caption) {
   return parseArray_(out);
 }
 
-/** Deliberately not given the video caption — descriptions come from search only. */
-function describe_(place) {
-  return claude_([{ role: 'user', content:
-    'Search the web for "' + place + '", then write 1-2 original sentences describing ' +
-    'what it is and what it is known for. Use only what you find about the place itself. ' +
-    'Reply with only the description, no preamble.' }],
-    [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
+/**
+ * One searched call answering both what a place is and where it is — paying for a
+ * second search just to get the street address doubled the cost of every venue OSM
+ * could not find. Deliberately not given the video caption.
+ */
+function research_(place) {
+  var out = claude_(CHEAP_MODEL, [{ role: 'user', content:
+    'Search the web for "' + place + '", then reply with ONLY this JSON object: ' +
+    '{"description": "1-2 original sentences on what the place is and what it is known ' +
+    'for", "address": "its full street address, or an empty string if you cannot find ' +
+    'one"}. Use only what you find about the place itself. No preamble, no markdown ' +
+    'fence.' }],
+    [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }], 1024);
+  var m = String(out).match(/[{][\s\S]*[}]/);
+  if (m) {
+    try {
+      var o = JSON.parse(m[0]);
+      return { description: String(o.description || '').trim(),
+               address: String(o.address || '').trim() };
+    } catch (e) { /* fall through to plain text */ }
+  }
+  return { description: String(out).trim(), address: '' };
 }
 
 /** Reads the researched description rather than guessing from the name. */
 function categoryOf_(place, description) {
-  return claude_([{ role: 'user', content:
+  return claude_(CHEAP_MODEL, [{ role: 'user', content:
     description + '\n\nGiven only that, what kind of place is "' + place + '"? Reply ' +
     'with 1-3 words, e.g. "Coffee shop", "Tapas bar", "Museum", "Park". No punctuation, ' +
     'no sentence.' }], null, 32);
@@ -166,8 +188,8 @@ function label_(category, place) {
   return cat ? cat + ' - ' + name : name;
 }
 
-function claude_(messages, tools, maxTokens) {
-  var payload = { model: MODEL, max_tokens: maxTokens, messages: messages };
+function claude_(model, messages, tools, maxTokens) {
+  var payload = { model: model, max_tokens: maxTokens, messages: messages };
   if (tools) payload.tools = tools;
   var res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
     method: 'post',

@@ -12,7 +12,10 @@
 const { spawnSync } = require('node:child_process');
 const assert = require('node:assert');
 
+// Extraction decides what deserves a pin at all — keep the stronger model there. The
+// per-place calls are simple and run far more often, so they go to the cheap one.
 const MODEL = 'claude-sonnet-5';
+const CHEAP_MODEL = 'claude-haiku-4-5';
 const DUPE_METERS = 60;
 const BROAD = new Set(['city', 'town', 'village', 'municipality', 'county', 'state',
   'province', 'region', 'country', 'continent', 'administrative', 'postcode']);
@@ -57,6 +60,18 @@ function label(category, place) {
   const name = String(place).split(',')[0].trim();
   const cat = String(category).replace(/[.\s]+$/, '').trim();
   return cat ? `${cat} - ${name}` : name;
+}
+
+/** Tolerates the model wrapping the JSON in prose; falls back to treating it as text. */
+function parseObj(text) {
+  const m = String(text).match(/\{[\s\S]*\}/);
+  if (m) {
+    try {
+      const o = JSON.parse(m[0]);
+      return { description: String(o.description ?? '').trim(), address: String(o.address ?? '').trim() };
+    } catch { /* fall through */ }
+  }
+  return { description: String(text).trim(), address: '' };
 }
 
 function parseArray(text) {
@@ -158,7 +173,7 @@ async function caption(url) {
   return [j.title, j.author_name].filter(Boolean).join(' — ');
 }
 
-async function claude(content, tools, max_tokens) {
+async function claude(model, content, tools, max_tokens) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -166,14 +181,14 @@ async function claude(content, tools, max_tokens) {
       'x-api-key': process.env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({ model: MODEL, max_tokens, messages: [{ role: 'user', content }], ...(tools && { tools }) }),
+    body: JSON.stringify({ model, max_tokens, messages: [{ role: 'user', content }], ...(tools && { tools }) }),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const j = await res.json();
   return j.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
 }
 
-const extractPlaces = async (cap) => parseArray(await claude(
+const extractPlaces = async (cap) => parseArray(await claude(MODEL,
   `Caption from a short travel video:\n\n${cap}\n\n` +
   'List the specific places worth pinning on a personal travel map: somewhere you can ' +
   'actually walk into or stand in front of — a restaurant, bar, cafe, shop, hotel, ' +
@@ -186,17 +201,24 @@ const extractPlaces = async (cap) => parseArray(await claude(
   'If nothing qualifies, return an empty list. Reply with ONLY a JSON array of ' +
   'strings.', null, 512));
 
-// Deliberately does NOT see the video caption — the description must come from
-// searching for the place itself, not from rewording someone's post.
-const describe = (place) => claude(
-  `Search the web for "${place}", then write 1-2 original sentences describing what it ` +
-  'is and what it is known for. Use only what you find about the place itself. ' +
-  'Reply with only the description, no preamble.',
-  [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
+/**
+ * One searched call that answers both questions we have about a place: what it is, and
+ * where it is. OSM often can't find small venues by name, and paying for a second web
+ * search just to get the street address doubled the cost of every such place.
+ *
+ * Deliberately does NOT see the video caption — the description has to come from
+ * searching for the place itself, not from rewording someone's post.
+ */
+const research = async (place) => parseObj(await claude(CHEAP_MODEL,
+  `Search the web for "${place}", then reply with ONLY this JSON object:\n` +
+  '{"description": "1-2 original sentences on what the place is and what it is known ' +
+  'for", "address": "its full street address, or an empty string if you cannot find one"}' +
+  '\n\nUse only what you find about the place itself. No preamble, no markdown fence.',
+  [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }], 1024));
 
 // Reads the researched description rather than guessing from the name — asking the
 // model cold called a cafe called "James Tweed" a hair salon.
-const categoryOf = (place, description) => claude(
+const categoryOf = (place, description) => claude(CHEAP_MODEL,
   `${description}
 
 Given only that, what kind of place is "${place}"? Reply with 1-3 ` +
@@ -237,17 +259,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function savePlace(place, cap, url, pins, missed, ix) {
   await sleep(1000);                              // Nominatim: 1 req/sec
   let g = await geocode(place);
+  let found = null;
   if (!g) {
-    // OSM rarely knows small cafés/bars by name. Have Claude look up the street
-    // address, then geocode that — coordinates still come from Nominatim, never
-    // from the model.
-    const addr = await claude(`Search the web for "${place}". Reply with ONLY its full ` +
-      'street address: street and number, postal code, city, country. Nothing else. ' +
-      'If you cannot find it, reply exactly NONE.',
-      [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 512);
-    if (!/^NONE/i.test(addr)) {
+    // OSM rarely knows small cafes/bars by name, so fall back to the address Claude
+    // found. Coordinates still come from Nominatim, never from the model — and the
+    // description from this same call is reused below instead of paid for twice.
+    found = await research(place);
+    if (found.address) {
       await sleep(1000);
-      g = await geocode(addr.replace(/\s+/g, ' ').trim());
+      g = await geocode(found.address.replace(/\s+/g, ' ').trim());
     }
   }
   if (!g) { missed.push(place); return null; }
@@ -267,7 +287,7 @@ async function savePlace(place, cap, url, pins, missed, ix) {
 
   // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
   const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
-  const description = flat(await describe(place));
+  const description = flat((found || await research(place)).description);
   const values = {
     timestamp: new Date().toISOString(), first_url: url, seen_from: url, place,
     description, lat: g.lat, lng: g.lng, city: g.city,
@@ -343,7 +363,8 @@ async function redescribe() {
     if (ix.place === undefined) continue;                        // Pins / city tabs only
     for (let n = 1; n < rows.length; n++) {
       if (!rows[n][ix.place]) continue;
-      const text = String(await describe(rows[n][ix.place])).replace(/\s*\n+\s*/g, ' ').trim();
+      const text = String((await research(rows[n][ix.place])).description)
+        .replace(/\s*\n+\s*/g, ' ').trim();
       await put(t, `${colOf(ix.description)}${n + 1}`, text);
       console.log(`${t} row ${n + 1}: ${text.slice(0, 90)}`);
     }
@@ -414,6 +435,13 @@ function selfcheck() {
   assert.deepEqual(rowFor(ix, { place: 'X', lat: 1, lng: 2, seen_from: 'u', city: 'skip' }),
     ['X', 1, 2, 'u']);
   assert.deepEqual(rowFor(ixOf(['lat', 'place']), { place: 'X', lat: 1 }), [1, 'X']);
+
+  assert.deepEqual(parseObj('here you go:\n{"description":"A cafe.","address":"C. 10"}'),
+    { description: 'A cafe.', address: 'C. 10' });
+  assert.deepEqual(parseObj('{"description":"A cafe.","address":""}'),
+    { description: 'A cafe.', address: '' });
+  assert.deepEqual(parseObj('just prose, no json'),
+    { description: 'just prose, no json', address: '' });
   assert.equal(label('Coffee shop', 'Clima comedor, Madrid, Spain'), 'Coffee shop - Clima comedor');
   assert.equal(label('', 'Retiro Park, Madrid'), 'Retiro Park');
   console.log('self-check OK');
