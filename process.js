@@ -283,6 +283,24 @@ async function main() {
   if (failed.length) process.exit(1);
 }
 
+/** One-shot repair: strip line breaks out of already-written rows. Idempotent. */
+async function flattenExisting() {
+  const flat = (v) => (typeof v === 'string' ? v.replace(/\s*\n+\s*/g, ' ').trim() : v);
+  for (const t of await titles()) {
+    const rows = await get(t);
+    if (!rows.length || rows[0][0] !== 'timestamp') continue;      // not one of ours
+    const width = rows[0].length;
+    const out = rows.map((r) => Array.from({ length: width }, (_, i) => flat(r[i] ?? '')));
+    if (JSON.stringify(out) === JSON.stringify(rows)) { console.log(`${t}: already clean`); continue; }
+    const s = await sheets();
+    await s.spreadsheets.values.update({
+      spreadsheetId: ID(), range: A1(t, `A1:${String.fromCharCode(64 + width)}${out.length}`),
+      valueInputOption: 'RAW', requestBody: { values: out },
+    });
+    console.log(`${t}: rewrote ${out.length} row(s)`);
+  }
+}
+
 // ------------------------------------------------------------- self-check
 
 function selfcheck() {
@@ -309,5 +327,7 @@ function selfcheck() {
   console.log('self-check OK');
 }
 
+const fail = (e) => { console.error(e); process.exit(1); };
 if (process.argv.includes('--selfcheck')) selfcheck();
-else main().catch((e) => { console.error(e); process.exit(1); });
+else if (process.argv.includes('--flatten')) flattenExisting().catch(fail);
+else main().catch(fail);

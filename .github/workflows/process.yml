@@ -9,6 +9,10 @@ on:
         description: 'Reprocess every Inbox row, ignoring the processed flags'
         type: boolean
         default: false
+      flatten:
+        description: 'Repair only: strip line breaks from existing rows, then stop'
+        type: boolean
+        default: false
 
 concurrency:
   group: process-inbox
@@ -25,7 +29,7 @@ jobs:
       - run: pipx install yt-dlp
       - run: npm install --no-audit --no-fund
       - run: node process.js --selfcheck
-      - run: node process.js
+      - run: node process.js ${{ inputs.flatten && '--flatten' || '' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
