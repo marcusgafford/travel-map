@@ -1,6 +1,6 @@
 # Setting up the phone half (the easy version)
 
-The robot half is done and running every 15 minutes. But right now the only way to
+The robot half is done and running on a schedule. But right now the only way to
 give it a video is to paste a link into the spreadsheet by hand. Boring.
 
 This page builds the fun part: **you tap Share on a TikTok, and it just lands in the
@@ -16,7 +16,7 @@ There are two pieces, and they're both quick:
 **How it fits together:** your iPhone can't write into a Google Sheet directly. So we
 glue a tiny web address onto the spreadsheet — a *doorbell*. Your phone rings it and
 says "here's a link." The doorbell writes it into the Inbox tab. Then the robot you
-already built picks it up on its next 15-minute sweep.
+already built picks it up on its next sweep.
 
 You need a password so strangers can't ring your doorbell. **Make one up right now** —
 mash the keyboard, something long like `k7Qp2mXvR9tLzW4nB6`. Write it on paper or in a
@@ -232,7 +232,7 @@ means it landed.
 4. You should get **✅ Saved**.
 5. Open your Google Sheet → **Inbox** tab. There's a new row with today's date and the
    link. 🎉
-6. Don't want to wait 15 minutes? Go to
+6. Don't want to wait for the next sweep? Go to
    **https://github.com/marcusgafford/travel-map/actions** → *process inbox* →
    **Run workflow**. A minute later the `Pins` tab has your first pin, with a
    description, and a new city tab appeared next to it.
@@ -256,7 +256,7 @@ means it landed.
 # What you'll have when this is done
 
 - Tap Share on any TikTok → it's in the Inbox within a second.
-- Every 15 minutes the robot reads captions, finds the places, looks each one up, writes
+- Every hour the robot reads captions, finds the places, looks each one up, writes
   a short description, and files it under the right city.
 - The same place shared from five different videos stays **one** pin — it just records
   all five links.

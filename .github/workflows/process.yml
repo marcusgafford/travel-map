@@ -2,7 +2,9 @@ name: process inbox
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # Hourly, not every 15 min: private-repo Actions minutes are metered, and 96
+    # runs/day would blow through the free allowance. Use "Run workflow" for now.
+    - cron: '7 * * * *'
   workflow_dispatch:
     inputs:
       force:

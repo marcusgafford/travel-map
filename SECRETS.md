@@ -188,7 +188,7 @@ just their names and when you added them. That's correct, that's the whole point
    - ✅ a green check — it worked. Click it to see the summary of pins added.
    - ❌ a red X — click into it to read what broke. See the table below.
 
-It'll also run by itself every 15 minutes from now on.
+It'll also run by itself every hour from now on.
 
 ---
 

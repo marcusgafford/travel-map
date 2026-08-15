@@ -3,7 +3,7 @@
 Share a TikTok → a pin shows up in Google My Maps, with a description.
 
 No server, no account, no subscription. Intake is a Google Apps Script Web App
-(instant, free); processing runs every 15 minutes on a schedule — either an Apps
+(instant, free); processing runs on a schedule — either an Apps
 Script trigger or a GitHub Actions workflow. Pick one.
 
 - **[SECRETS.md](SECRETS.md)** — plain-English walkthrough for every key and secret.
@@ -14,7 +14,7 @@ every click named.
 
 ```
 iOS Shortcut ──POST──▶ Web App ──▶ Inbox tab
-                                      │  (every 15 min)
+                                      │  (hourly, or on demand)
                                       ▼
                        caption (yt-dlp / TikTok oEmbed)
                        → Claude: extract places worth pinning
@@ -201,7 +201,7 @@ Steps 1–3 and 5–7 of the setup still apply; you skip step 4 (`installTrigger
 
 4. **Delete the Apps Script trigger** (Triggers → bin icon) so only one runs.
 5. Actions tab → *process inbox* → **Run workflow** to try it now. It also runs every
-   15 minutes on its own.
+   an hour on its own.
 
 Scheduled runs on a repo with no pushes get disabled after 60 days of inactivity —
 GitHub emails you first, and one click re-enables them.
@@ -213,6 +213,9 @@ GitHub emails you first, and one click re-enables them.
   anything errored, which triggers GitHub's own failure email. Want the per-run "3 pins
   added" email regardless, add a `send-mail` step or POST to ntfy in the workflow.
 - No batch cap, no 4.5-minute budget — it processes every unprocessed row.
+- Runs hourly. Actions minutes are free on public repos but metered on private ones,
+  where 96 runs a day would exceed the free allowance — change the `cron` if that
+  tradeoff is different for you.
 - Rows marked `error:` retry themselves on the next run. **Run workflow** has a
   **force** checkbox that reprocesses *every* row, flags ignored — handy after a fix.
 - `concurrency: process-inbox` in the workflow is what stops two runs overlapping (the
