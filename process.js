@@ -173,7 +173,11 @@ const describe = (place, cap) => claude(
 async function geocode(q) {
   const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1' +
     `&email=${encodeURIComponent(process.env.NOMINATIM_EMAIL || '')}&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { 'user-agent': 'personal-travel-map/1.0' } });
+  // accept-language pins country/city names to English — without it Nominatim answers
+  // in the local language and you get Madrid-España next to Paris-France.
+  const res = await fetch(url, {
+    headers: { 'user-agent': 'personal-travel-map/1.0', 'accept-language': 'en' },
+  });
   // Don't swallow this — a blocked or rate-limited geocoder used to look identical
   // to "place not found", so rows silently completed with zero pins.
   if (!res.ok) throw new Error(`Nominatim ${res.status} for "${q}"`);
