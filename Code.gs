@@ -17,9 +17,9 @@ var BROAD = ['city', 'town', 'village', 'municipality', 'county', 'state', 'prov
 
 var INBOX = 'Inbox';
 var PINS = 'Pins';
-var PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'place', 'description',
-                  'lat', 'lng', 'city', 'label'];
-var SEEN_COL = 3;            // seen_from, 1-based
+var PIN_HEADER = ['place', 'description', 'lat', 'lng', 'city', 'label',
+                  'timestamp', 'first_url', 'seen_from'];
+var SEEN_COL = 9;            // seen_from, 1-based
 
 // ---------------------------------------------------------------- intake
 
@@ -106,8 +106,8 @@ function savePlace_(place, caption, url, pins) {
     return null;
   }
 
-  var desc = describe_(place);
-  var row = [new Date(), url, url, place, desc, g.lat, g.lng, g.city];
+  var row = [place, describe_(place), g.lat, g.lng, g.city,
+             label_(categoryOf_(place), place), new Date(), url, url];
   tab_(PINS).appendRow(row);
   cityTab_(g.city).appendRow(row);
   pins.push({ row: 0, addr: norm_(g.address), lat: g.lat, lng: g.lng, city: g.city });
@@ -148,6 +148,20 @@ function describe_(place) {
     'what it is and what it is known for. Use only what you find about the place itself. ' +
     'Reply with only the description, no preamble.' }],
     [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
+}
+
+function categoryOf_(place) {
+  return claude_([{ role: 'user', content:
+    'What kind of place is "' + place + '"? Reply with 1-3 words only, e.g. ' +
+    '"Coffee shop", "Tapas bar", "Museum", "Park". No punctuation, no sentence.' }],
+    null, 32);
+}
+
+/** "Coffee shop" + "Clima comedor, Madrid, Spain" -> "Coffee shop - Clima comedor" */
+function label_(category, place) {
+  var name = String(place).split(',')[0].trim();
+  var cat = String(category).replace(/[.\s]+$/, '').trim();
+  return cat ? cat + ' - ' + name : name;
 }
 
 function claude_(messages, tools, maxTokens) {
@@ -223,8 +237,8 @@ function findDupe_(pins, g) {
 function loadPins_() {
   var v = tab_(PINS).getDataRange().getValues(), out = [];
   for (var i = 1; i < v.length; i++) {
-    if (!v[i][5] && !v[i][6]) continue;
-    out.push({ row: i + 1, addr: norm_(v[i][3] + ' ' + v[i][7]), lat: +v[i][5], lng: +v[i][6], city: v[i][7] });
+    if (!v[i][2] && !v[i][3]) continue;
+    out.push({ row: i + 1, addr: norm_(v[i][0] + ' ' + v[i][4]), lat: +v[i][2], lng: +v[i][3], city: v[i][4] });
   }
   return out;
 }
@@ -232,7 +246,7 @@ function loadPins_() {
 function findRow_(sheet, lat, lng) {
   var v = sheet.getDataRange().getValues();
   for (var i = 1; i < v.length; i++) {
-    if (meters_(+v[i][5], +v[i][6], lat, lng) <= 1) return i + 1;
+    if (meters_(+v[i][2], +v[i][3], lat, lng) <= 1) return i + 1;
   }
   return 0;
 }

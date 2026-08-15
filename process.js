@@ -16,8 +16,10 @@ const MODEL = 'claude-sonnet-5';
 const DUPE_METERS = 60;
 const BROAD = new Set(['city', 'town', 'village', 'municipality', 'county', 'state',
   'province', 'region', 'country', 'continent', 'administrative', 'postcode']);
-const PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'place', 'description',
-  'lat', 'lng', 'city', 'label'];
+// Order for tabs this job creates. Existing tabs are read by header NAME, so columns
+// can be rearranged in the sheet without touching any of this.
+const PIN_HEADER = ['place', 'description', 'lat', 'lng', 'city', 'label',
+  'timestamp', 'first_url', 'seen_from'];
 
 // ---------------------------------------------------------------- pure bits
 // Mirrors Code.gs. Kept duplicated on purpose: Code.gs has to stay a single
@@ -81,8 +83,13 @@ async function sheets() {
 
 const ID = () => process.env.SHEET_ID;
 const A1 = (title, range) => `'${title.replace(/'/g, "''")}'!${range}`;
+const colOf = (i) => String.fromCharCode(65 + i);
+const ixOf = (header) => Object.fromEntries((header || []).map((h, i) => [String(h).trim(), i]));
+const rowFor = (ix, o) => Object.keys(ix).reduce(
+  (r, k) => { r[ix[k]] = o[k] ?? ''; return r; }, new Array(Object.keys(ix).length).fill(''));
+const headerOf = async (title) => ixOf((await get(title, '1:1'))[0]);
 
-async function get(title, range = 'A:I') {
+async function get(title, range = 'A:Z') {
   const s = await sheets();
   const r = await s.spreadsheets.values.get({ spreadsheetId: ID(), range: A1(title, range) });
   return r.data.values || [];
@@ -91,7 +98,7 @@ async function get(title, range = 'A:I') {
 async function append(title, row) {
   const s = await sheets();
   await s.spreadsheets.values.append({
-    spreadsheetId: ID(), range: A1(title, 'A:I'),
+    spreadsheetId: ID(), range: A1(title, 'A:Z'),
     valueInputOption: 'RAW', requestBody: { values: [row] },
   });
 }
@@ -123,10 +130,11 @@ async function ensureTab(title, header) {
 
 const cityTab = (city) => ensureTab(city, PIN_HEADER);
 
-async function appendSeen(title, row, url) {
-  const cell = (await get(title, `C${row}:C${row}`))[0]?.[0] || '';
+async function appendSeen(title, ix, row, url) {
+  const c = colOf(ix.seen_from);
+  const cell = (await get(title, `${c}${row}:${c}${row}`))[0]?.[0] || '';
   const seen = String(cell).split(/\s*,\s*/).filter(Boolean);
-  if (!seen.includes(url)) await put(title, `C${row}`, seen.concat(url).join(', '));
+  if (!seen.includes(url)) await put(title, `${c}${row}`, seen.concat(url).join(', '));
 }
 
 // ------------------------------------------------------------- the pieces
@@ -221,7 +229,7 @@ async function geocode(q) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function savePlace(place, cap, url, pins, missed) {
+async function savePlace(place, cap, url, pins, missed, ix) {
   await sleep(1000);                              // Nominatim: 1 req/sec
   let g = await geocode(place);
   if (!g) {
@@ -241,22 +249,27 @@ async function savePlace(place, cap, url, pins, missed) {
 
   const hit = findDupe(pins, g);
   if (hit) {
-    await appendSeen('Pins', hit.row, url);
+    await appendSeen('Pins', ix, hit.row, url);
     if ((await titles()).includes(hit.city)) {
+      const cix = await headerOf(hit.city);
       const rows = await get(hit.city);
-      const i = rows.findIndex((r, n) => n > 0 && meters(+r[5], +r[6], hit.lat, hit.lng) <= 1);
-      if (i > 0) await appendSeen(hit.city, i + 1, url);
+      const i = rows.findIndex((r, n) => n > 0 &&
+        meters(+r[cix.lat], +r[cix.lng], hit.lat, hit.lng) <= 1);
+      if (i > 0) await appendSeen(hit.city, cix, i + 1, url);
     }
     return null;
   }
 
   // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
   const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
-  const row = [new Date().toISOString(), url, url, place,
-    flat(await describe(place)), g.lat, g.lng, g.city,
-    label(await categoryOf(place), place)];
-  await append('Pins', row);
-  await append(await cityTab(g.city), row);
+  const values = {
+    timestamp: new Date().toISOString(), first_url: url, seen_from: url, place,
+    description: flat(await describe(place)), lat: g.lat, lng: g.lng, city: g.city,
+    label: label(await categoryOf(place), place),
+  };
+  await append('Pins', rowFor(ix, values));
+  const city = await cityTab(g.city);
+  await append(city, rowFor(await headerOf(city), values));
   pins.push({ row: 0, addr: norm(g.address), lat: g.lat, lng: g.lng, city: g.city });
   return place;
 }
@@ -268,9 +281,11 @@ async function main() {
   const meta = await (await sheets()).spreadsheets.get({ spreadsheetId: ID(), fields: 'properties.title' });
   const inbox = await get('Inbox', 'A:C');
   console.log(`reading "${meta.data.properties.title}" — ${Math.max(inbox.length - 1, 0)} inbox row(s)`);
+  const pinsIx = await headerOf('Pins');
   const pins = (await get('Pins')).slice(1)
-    .filter((r) => r[5] || r[6])
-    .map((r, i) => ({ row: i + 2, addr: norm(`${r[3]} ${r[7]}`), lat: +r[5], lng: +r[6], city: r[7] }));
+    .filter((r) => r[pinsIx.lat] || r[pinsIx.lng])
+    .map((r, i) => ({ row: i + 2, addr: norm(`${r[pinsIx.place]} ${r[pinsIx.city]}`),
+      lat: +r[pinsIx.lat], lng: +r[pinsIx.lng], city: r[pinsIx.city] }));
 
   const added = [], empty = [], failed = [], missed = [];
   for (let n = 1; n < inbox.length; n++) {
@@ -289,7 +304,7 @@ async function main() {
         continue;
       }
       for (const p of places) {
-        const name = await savePlace(p, cap, url, pins, missed);
+        const name = await savePlace(p, cap, url, pins, missed, pinsIx);
         if (name) added.push(name);
       }
       await put('Inbox', `C${n + 1}`, 'yes');
@@ -314,31 +329,16 @@ async function main() {
   if (failed.length) process.exit(1);
 }
 
-/** One-shot migration: delete the old caption column (D) from pin tabs. Idempotent. */
-async function dropCaption() {
-  const s = await sheets();
-  const meta = await s.spreadsheets.get({ spreadsheetId: ID(), fields: 'sheets.properties(sheetId,title)' });
-  for (const { properties: { sheetId, title } } of meta.data.sheets) {
-    const head = (await get(title, 'A1:J1'))[0] || [];
-    if (head[3] !== 'caption') { console.log(`${title}: nothing to drop`); continue; }
-    await s.spreadsheets.batchUpdate({
-      spreadsheetId: ID(),
-      requestBody: { requests: [{ deleteDimension: { range: {
-        sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 } } }] },
-    });
-    console.log(`${title}: dropped the caption column`);
-  }
-}
-
 /** Rewrite every description from a fresh web search, ignoring the video caption. */
 async function redescribe() {
   for (const t of await titles()) {
     const rows = await get(t);
-    if (!rows.length || rows[0][3] !== 'place') continue;        // Pins / city tabs only
+    const ix = ixOf(rows[0]);
+    if (ix.place === undefined) continue;                        // Pins / city tabs only
     for (let n = 1; n < rows.length; n++) {
-      if (!rows[n][3]) continue;
-      const text = String(await describe(rows[n][3])).replace(/\s*\n+\s*/g, ' ').trim();
-      await put(t, `E${n + 1}`, text);
+      if (!rows[n][ix.place]) continue;
+      const text = String(await describe(rows[n][ix.place])).replace(/\s*\n+\s*/g, ' ').trim();
+      await put(t, `${colOf(ix.description)}${n + 1}`, text);
       console.log(`${t} row ${n + 1}: ${text.slice(0, 90)}`);
     }
   }
@@ -348,14 +348,14 @@ async function redescribe() {
 async function relabel() {
   for (const t of await titles()) {
     const rows = await get(t);
-    if (!rows.length || rows[0][3] !== 'place') continue;        // Pins / city tabs only
+    const ix = ixOf(rows[0]);
+    if (ix.place === undefined || ix.label === undefined) continue;
     for (let n = 1; n < rows.length; n++) {
-      if (rows[n][8] || !rows[n][3]) continue;                   // has one, or empty row
-      const text = label(await categoryOf(rows[n][3]), rows[n][3]);
-      await put(t, `I${n + 1}`, text);
+      if (rows[n][ix.label] || !rows[n][ix.place]) continue;     // has one, or empty row
+      const text = label(await categoryOf(rows[n][ix.place]), rows[n][ix.place]);
+      await put(t, `${colOf(ix.label)}${n + 1}`, text);
       console.log(`${t} row ${n + 1}: ${text}`);
     }
-    if (rows[0][8] !== 'label') await put(t, 'I1', 'label');
   }
 }
 
@@ -400,6 +400,11 @@ function selfcheck() {
   assert.equal(findDupe(pins, { address: 'x', lat: 38.72, lng: -9.15 }), null);
 
   assert.equal(A1("Paris-France", 'A:I'), "'Paris-France'!A:I");
+  const ix = ixOf(['place', 'lat', 'lng', 'seen_from']);
+  assert.equal(colOf(ix.seen_from), 'D');
+  assert.deepEqual(rowFor(ix, { place: 'X', lat: 1, lng: 2, seen_from: 'u', city: 'skip' }),
+    ['X', 1, 2, 'u']);
+  assert.deepEqual(rowFor(ixOf(['lat', 'place']), { place: 'X', lat: 1 }), [1, 'X']);
   assert.equal(label('Coffee shop', 'Clima comedor, Madrid, Spain'), 'Coffee shop - Clima comedor');
   assert.equal(label('', 'Retiro Park, Madrid'), 'Retiro Park');
   console.log('self-check OK');
@@ -410,5 +415,4 @@ if (process.argv.includes('--selfcheck')) selfcheck();
 else if (process.argv.includes('--flatten')) flattenExisting().catch(fail);
 else if (process.argv.includes('--relabel')) relabel().catch(fail);
 else if (process.argv.includes('--redescribe')) redescribe().catch(fail);
-else if (process.argv.includes('--dropcaption')) dropCaption().catch(fail);
 else main().catch(fail);
