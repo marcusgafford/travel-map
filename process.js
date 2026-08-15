@@ -220,8 +220,10 @@ async function savePlace(place, cap, url, pins, missed) {
     return null;
   }
 
-  const row = [new Date().toISOString(), url, url, cap, place, await describe(place, cap),
-    g.lat, g.lng, g.city];
+  // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
+  const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
+  const row = [new Date().toISOString(), url, url, flat(cap), place,
+    flat(await describe(place, cap)), g.lat, g.lng, g.city];
   await append('Pins', row);
   await append(await cityTab(g.city), row);
   pins.push({ row: 0, addr: norm(g.address), lat: g.lat, lng: g.lng, city: g.city });
