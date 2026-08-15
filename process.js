@@ -19,6 +19,10 @@ const CHEAP_MODEL = 'claude-haiku-4-5';
 const DUPE_METERS = 60;
 const BROAD = new Set(['city', 'town', 'village', 'municipality', 'county', 'state',
   'province', 'region', 'country', 'continent', 'administrative', 'postcode']);
+const PLACES_BROAD = new Set(['locality', 'sublocality', 'neighborhood', 'political',
+  'administrative_area_level_1', 'administrative_area_level_2', 'country', 'postal_code']);
+const UNRESOLVED = 'Unresolved';
+const UNRESOLVED_HEADER = ['place', 'description', 'first_url', 'timestamp'];
 // Order for tabs this job creates. Existing tabs are read by header NAME, so columns
 // can be rearranged in the sheet without touching any of this.
 const PIN_HEADER = ['place', 'description', 'lat', 'lng', 'city', 'label',
@@ -244,11 +248,52 @@ async function geocode(q) {
     console.log(`skipping "${q}" — too broad (${r.addresstype})`);
     return null;
   }
-  const ad = r.address || {};
+  return { lat: +r.lat, lng: +r.lon, address: r.display_name, city: cityOf(r.address) };
+}
+
+const cityOf = (ad = {}) => cityName(
+  ad.city || ad.town || ad.village || ad.municipality || ad.county || ad.state || '',
+  ad.country || '');
+
+/** Nominatim knows coordinates but not always the city name; ask it in reverse. */
+async function reverseCity(lat, lng) {
+  const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2' +
+    `&addressdetails=1&lat=${lat}&lon=${lng}` +
+    `&email=${encodeURIComponent(process.env.NOMINATIM_EMAIL || '')}`,
+    { headers: { 'user-agent': 'personal-travel-map/1.0', 'accept-language': 'en' } });
+  if (!res.ok) return 'Unknown';
+  return cityOf((await res.json()).address);
+}
+
+/**
+ * Google Places knows small venues by name where OpenStreetMap doesn't. Free up to
+ * 10k lookups/month, and it runs before the paid web search — so a cafe OSM has never
+ * heard of costs nothing to place. Skipped entirely when the key isn't set.
+ */
+async function placesLookup(q) {
+  const key = process.env.GOOGLE_PLACES_KEY;
+  if (!key) return null;
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Goog-Api-Key': key,
+      'X-Goog-FieldMask': 'places.location,places.formattedAddress,places.types',
+    },
+    body: JSON.stringify({ textQuery: q, maxResultCount: 1, languageCode: 'en' }),
+  });
+  if (!res.ok) throw new Error(`Places ${res.status} for "${q}": ${(await res.text()).slice(0, 150)}`);
+  const p = (await res.json()).places?.[0];
+  if (!p?.location) return null;
+  // Same too-broad guard as the OSM path — Places will happily hand back a city centre.
+  if ((p.types || []).some((t) => PLACES_BROAD.has(t))) {
+    console.log(`skipping "${q}" — Places returned a region (${(p.types || []).join(', ')})`);
+    return null;
+  }
+  await sleep(1000);                              // Nominatim: 1 req/sec
   return {
-    lat: +r.lat, lng: +r.lon, address: r.display_name,
-    city: cityName(ad.city || ad.town || ad.village || ad.municipality || ad.county || ad.state || '',
-      ad.country || ''),
+    lat: p.location.latitude, lng: p.location.longitude, address: p.formattedAddress,
+    city: await reverseCity(p.location.latitude, p.location.longitude),
   };
 }
 
@@ -258,19 +303,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function savePlace(place, cap, url, pins, missed, ix) {
   await sleep(1000);                              // Nominatim: 1 req/sec
+  // Cheapest source first: OSM (free) -> Google Places (free tier) -> a paid web
+  // search for the street address, which we then geocode. Coordinates always come
+  // from a geocoder, never from the model.
   let g = await geocode(place);
   let found = null;
+  if (!g) g = await placesLookup(place);
   if (!g) {
-    // OSM rarely knows small cafes/bars by name, so fall back to the address Claude
-    // found. Coordinates still come from Nominatim, never from the model — and the
-    // description from this same call is reused below instead of paid for twice.
+    // The description from this same call is reused below instead of paid for twice.
     found = await research(place);
     if (found.address) {
       await sleep(1000);
       g = await geocode(found.address.replace(/\s+/g, ' ').trim());
     }
   }
-  if (!g) { missed.push(place); return null; }
+  if (!g) {
+    // Park it with whatever we learned so it can be looked up by hand, rather than
+    // leaving it as a name in a log nobody reads.
+    missed.push(place);
+    await append(UNRESOLVED, rowFor(await headerOf(UNRESOLVED), {
+      place, description: (found || {}).description || '', first_url: url,
+      timestamp: new Date().toISOString(),
+    }));
+    return null;
+  }
 
   const hit = findDupe(pins, g);
   if (hit) {
@@ -303,6 +359,7 @@ async function savePlace(place, cap, url, pins, missed, ix) {
 async function main() {
   await ensureTab('Inbox', ['timestamp', 'url', 'processed']);
   await ensureTab('Pins', PIN_HEADER);
+  await ensureTab(UNRESOLVED, UNRESOLVED_HEADER);
 
   const meta = await (await sheets()).spreadsheets.get({ spreadsheetId: ID(), fields: 'properties.title' });
   const inbox = await get('Inbox', 'A:C');
@@ -344,7 +401,7 @@ async function main() {
     `## Travel map: ${added.length} new pin(s)`, '',
     `**Added (${added.length}):** ${added.join(', ') || 'none'}`,
     `**No place found (${empty.length}):** ${empty.join(', ') || 'none'}`,
-    `**Not pinned — too broad or not found (${missed.length}):** ${missed.join(', ') || 'none'}`,
+    `**Not pinned, sent to ${UNRESOLVED} (${missed.length}):** ${missed.join(', ') || 'none'}`,
     `**Errors (${failed.length}):**`, ...failed.map((f) => `- ${f}`),
   ].join('\n');
   console.log(summary);

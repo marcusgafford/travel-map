@@ -45,4 +45,5 @@ jobs:
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           NOMINATIM_EMAIL: ${{ secrets.NOMINATIM_EMAIL }}
+          GOOGLE_PLACES_KEY: ${{ secrets.GOOGLE_PLACES_KEY }}
           FORCE: ${{ inputs.force && '1' || '' }}

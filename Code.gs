@@ -6,6 +6,11 @@
  *   processInbox() — time-driven trigger, every 10-15 min. Does all the work.
  *
  * Run setup() once, then installTrigger() once. See README.md.
+ *
+ * Note: process.js (the GitHub Actions half) additionally tries Google Places when
+ * OpenStreetMap can't find a venue, and parks whatever no source can locate in an
+ * `Unresolved` tab. This file has neither — it goes straight to the web-search
+ * address lookup and drops what it can't place.
  */
 
 // Extraction decides what deserves a pin; the per-place calls are simple and frequent.

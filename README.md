@@ -163,9 +163,11 @@ run picks them up, 15 at a time. Column A can be blank too.
 - **Caption-only extraction.** If a video shows a place without naming it in the
   caption, nothing gets extracted — it lands in `no-places`.
 - **Some venues can't be geocoded.** OpenStreetMap often doesn't know small cafés and
-  bars by name. On a miss the job asks Claude (web search) for the street address and
-  geocodes that, which recovers most of them; whatever still fails is listed under
-  *Could not be geocoded* in the run summary. Add those by hand if you want them.
+  bars by name. The job tries three sources in order — OSM (free), Google Places (free
+  up to 10k lookups/month, if `GOOGLE_PLACES_KEY` is set), then a paid web search for
+  the street address. Anything all three miss goes to the **`Unresolved`** tab with its
+  name, description and source video, so you can look it up by hand and paste it into
+  a city tab yourself.
 
 ## Alternative: run processing on GitHub Actions
 
@@ -196,6 +198,7 @@ Steps 1–3 and 5–7 of the setup still apply; you skip step 4 (`installTrigger
    | `GOOGLE_SA_JSON` | the whole service-account JSON file, pasted |
    | `SHEET_ID` | the `/d/<this>/edit` chunk of the Sheet URL |
    | `NOMINATIM_EMAIL` | your email |
+   | `GOOGLE_PLACES_KEY` | *optional* — a Google Places API key. Without it the job still works, it just falls back to a paid web search for venues OSM can't find |
 
    Click-by-click instructions for getting each of these: [SECRETS.md](SECRETS.md).
 
