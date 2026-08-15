@@ -106,8 +106,9 @@ function savePlace_(place, caption, url, pins) {
     return null;
   }
 
-  var row = [place, describe_(place), g.lat, g.lng, g.city,
-             label_(categoryOf_(place), place), new Date(), url, url];
+  var desc = describe_(place);
+  var row = [place, desc, g.lat, g.lng, g.city,
+             label_(categoryOf_(place, desc), place), new Date(), url, url];
   tab_(PINS).appendRow(row);
   cityTab_(g.city).appendRow(row);
   pins.push({ row: 0, addr: norm_(g.address), lat: g.lat, lng: g.lng, city: g.city });
@@ -150,11 +151,14 @@ function describe_(place) {
     [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
 }
 
-function categoryOf_(place) {
+/** Reads the researched description rather than guessing from the name. */
+function categoryOf_(place, description) {
   return claude_([{ role: 'user', content:
-    'What kind of place is "' + place + '"? Reply with 1-3 words only, e.g. ' +
-    '"Coffee shop", "Tapas bar", "Museum", "Park". No punctuation, no sentence.' }],
-    null, 32);
+    description + '
+
+Given only that, what kind of place is "' + place + '"? Reply ' +
+    'with 1-3 words, e.g. "Coffee shop", "Tapas bar", "Museum", "Park". No punctuation, ' +
+    'no sentence.' }], null, 32);
 }
 
 /** "Coffee shop" + "Clima comedor, Madrid, Spain" -> "Coffee shop - Clima comedor" */

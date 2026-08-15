@@ -194,9 +194,14 @@ const describe = (place) => claude(
   'Reply with only the description, no preamble.',
   [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
 
-const categoryOf = (place) => claude(
-  `What kind of place is "${place}"? Reply with 1-3 words only, e.g. "Coffee shop", ` +
-  '"Tapas bar", "Museum", "Park". No punctuation, no sentence.', null, 32);
+// Reads the researched description rather than guessing from the name — asking the
+// model cold called a cafe called "James Tweed" a hair salon.
+const categoryOf = (place, description) => claude(
+  `${description}
+
+Given only that, what kind of place is "${place}"? Reply with 1-3 ` +
+  'words, e.g. "Coffee shop", "Tapas bar", "Museum", "Park". No punctuation, no sentence.',
+  null, 32);
 
 async function geocode(q) {
   const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1' +
@@ -262,10 +267,11 @@ async function savePlace(place, cap, url, pins, missed, ix) {
 
   // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
   const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
+  const description = flat(await describe(place));
   const values = {
     timestamp: new Date().toISOString(), first_url: url, seen_from: url, place,
-    description: flat(await describe(place)), lat: g.lat, lng: g.lng, city: g.city,
-    label: label(await categoryOf(place), place),
+    description, lat: g.lat, lng: g.lng, city: g.city,
+    label: label(await categoryOf(place, description), place),
   };
   await append('Pins', rowFor(ix, values));
   const city = await cityTab(g.city);
@@ -351,8 +357,10 @@ async function relabel() {
     const ix = ixOf(rows[0]);
     if (ix.place === undefined || ix.label === undefined) continue;
     for (let n = 1; n < rows.length; n++) {
-      if (rows[n][ix.label] || !rows[n][ix.place]) continue;     // has one, or empty row
-      const text = label(await categoryOf(rows[n][ix.place]), rows[n][ix.place]);
+      // FORCE rewrites labels that are already there; otherwise only fills blanks.
+      if ((rows[n][ix.label] && !process.env.FORCE) || !rows[n][ix.place]) continue;
+      const text = label(
+        await categoryOf(rows[n][ix.place], rows[n][ix.description] || ''), rows[n][ix.place]);
       await put(t, `${colOf(ix.label)}${n + 1}`, text);
       console.log(`${t} row ${n + 1}: ${text}`);
     }
