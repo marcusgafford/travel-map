@@ -450,6 +450,21 @@ async function redescribe() {
   }
 }
 
+/**
+ * Destructive: wipe every pin row (headers kept) so a --force run rebuilds them from
+ * the Inbox. Everything here is derived data — the Inbox URLs are the source of truth.
+ */
+async function reset() {
+  for (const t of await titles()) {
+    const rows = await get(t);
+    if (ixOf(rows[0]).place === undefined) continue;   // Pins, city tabs, Unresolved
+    if (rows.length < 2) { console.log(`${t}: already empty`); continue; }
+    const s = await sheets();
+    await s.spreadsheets.values.clear({ spreadsheetId: ID(), range: A1(t, `A2:Z${rows.length}`) });
+    console.log(`${t}: cleared ${rows.length - 1} row(s)`);
+  }
+}
+
 /** Fill the label column on rows written before it existed. Idempotent. */
 async function relabel() {
   for (const t of await titles()) {
@@ -547,5 +562,6 @@ const fail = (e) => { console.error(e); process.exit(1); };
 if (process.argv.includes('--selfcheck')) selfcheck();
 else if (process.argv.includes('--flatten')) flattenExisting().catch(fail);
 else if (process.argv.includes('--relabel')) relabel().catch(fail);
+else if (process.argv.includes('--reset')) reset().catch(fail);
 else if (process.argv.includes('--redescribe')) redescribe().catch(fail);
 else main().catch(fail);

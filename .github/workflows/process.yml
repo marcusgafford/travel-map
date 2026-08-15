@@ -15,6 +15,10 @@ on:
         description: 'Repair only: strip line breaks from existing rows, then stop'
         type: boolean
         default: false
+      reset:
+        description: 'DESTRUCTIVE: delete every pin row, then re-run with force to rebuild'
+        type: boolean
+        default: false
       relabel:
         description: 'Repair only: fill the label column on existing pins, then stop'
         type: boolean
@@ -39,7 +43,7 @@ jobs:
       - run: pipx install yt-dlp
       - run: npm install --no-audit --no-fund
       - run: node process.js --selfcheck
-      - run: node process.js ${{ inputs.flatten && '--flatten' || '' }} ${{ inputs.relabel && '--relabel' || '' }} ${{ inputs.redescribe && '--redescribe' || '' }}
+      - run: node process.js ${{ inputs.flatten && '--flatten' || '' }} ${{ inputs.reset && '--reset' || '' }} ${{ inputs.relabel && '--relabel' || '' }} ${{ inputs.redescribe && '--redescribe' || '' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
