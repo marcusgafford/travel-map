@@ -160,8 +160,9 @@ const extractPlaces = async (cap) => parseArray(await claude(
   `Caption from a short travel video:\n\n${cap}\n\n` +
   'List every distinct real-world place (restaurant, bar, museum, park, landmark, ' +
   'neighbourhood) that is named or clearly implied. Include the city or country in each ' +
-  'entry so it can be geocoded. Do not merge separate places into one entry. If none, ' +
-  'return an empty list. Reply with ONLY a JSON array of strings.', null, 512));
+  'entry so it can be geocoded. Do not merge separate places into one entry. Do not ' +
+  'return a city, region or country on its own — only specific places within one. ' +
+  'If none, return an empty list. Reply with ONLY a JSON array of strings.', null, 512));
 
 const describe = (place, cap) => claude(
   `Search the web, then write 1-2 original sentences describing "${place}" — what it is ` +
@@ -192,7 +193,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function savePlace(place, cap, url, pins, missed) {
   await sleep(1000);                              // Nominatim: 1 req/sec
-  const g = await geocode(place);
+  let g = await geocode(place);
+  if (!g) {
+    // OSM rarely knows small cafés/bars by name. Have Claude look up the street
+    // address, then geocode that — coordinates still come from Nominatim, never
+    // from the model.
+    const addr = await claude(`Search the web for "${place}". Reply with ONLY its full ` +
+      'street address: street and number, postal code, city, country. Nothing else. ' +
+      'If you cannot find it, reply exactly NONE.',
+      [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 512);
+    if (!/^NONE/i.test(addr)) {
+      await sleep(1000);
+      g = await geocode(addr.replace(/\s+/g, ' ').trim());
+    }
+  }
   if (!g) { missed.push(place); return null; }
 
   const hit = findDupe(pins, g);
