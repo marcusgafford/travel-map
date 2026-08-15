@@ -378,6 +378,7 @@ async function main() {
 
   const uix = await headerOf(UNRESOLVED);
   const parked = new Set((await get(UNRESOLVED)).slice(1).map((r) => norm(r[uix.place])));
+  const parkedBefore = parked.size;
 
   const added = [], empty = [], failed = [], missed = [];
   for (let n = 1; n < inbox.length; n++) {
@@ -410,7 +411,8 @@ async function main() {
     `## Travel map: ${added.length} new pin(s)`, '',
     `**Added (${added.length}):** ${added.join(', ') || 'none'}`,
     `**No place found (${empty.length}):** ${empty.join(', ') || 'none'}`,
-    `**Not pinned, sent to ${UNRESOLVED} (${missed.length}):** ${missed.join(', ') || 'none'}`,
+    `**Could not be located (${missed.length}):** ${missed.join(', ') || 'none'}`,
+    `**New rows in ${UNRESOLVED}:** ${parked.size - parkedBefore}`,
     `**Errors (${failed.length}):**`, ...failed.map((f) => `- ${f}`),
   ].join('\n');
   console.log(summary);
