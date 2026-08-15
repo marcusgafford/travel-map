@@ -1,0 +1,11 @@
+{
+  "name": "travel-map",
+  "private": true,
+  "scripts": {
+    "start": "node process.js",
+    "test": "node process.js --selfcheck"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
