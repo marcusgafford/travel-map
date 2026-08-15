@@ -130,8 +130,12 @@ async function caption(url) {
     const j = JSON.parse(r.stdout.split('\n')[0]);
     return [j.description || j.title, j.uploader].filter(Boolean).join(' — ');
   }
-  // yt-dlp can't read TikTok photo/slideshow posts. oEmbed can, and it's free.
-  const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
+  // yt-dlp can't read TikTok photo/slideshow posts, and oEmbed 400s on both the
+  // short link and the /photo/ path — but it answers for the /video/ path of the
+  // same id. So: follow the redirect, swap the path, ask oEmbed.
+  const real = (await fetch(url, { method: 'HEAD', redirect: 'follow' })).url
+    .split('?')[0].replace('/photo/', '/video/');
+  const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(real)}`);
   if (!res.ok) throw new Error('yt-dlp: ' + String(r.stderr || '').trim().slice(0, 160));
   const j = await res.json();
   return [j.title, j.author_name].filter(Boolean).join(' — ');
