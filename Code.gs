@@ -268,6 +268,64 @@ function setup() {
   ss_().getSheetByName(PINS).setFrozenRows(1);
 }
 
+/** Sheet menu: Travel map -> Format tabs. Reload the sheet after pasting this in. */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Travel map')
+    .addItem('Format tabs', 'beautify').addToUi();
+}
+
+/**
+ * Cosmetic only. Run it whenever a new city tab shows up — safe to re-run.
+ * ponytail: manual, same as the My Maps reimport. Nothing here affects the data.
+ */
+function beautify() {
+  var widths = { timestamp: 150, first_url: 200, seen_from: 200, caption: 320,
+    place: 200, description: 460, lat: 80, lng: 80, city: 150, url: 380, processed: 130 };
+
+  ss_().getSheets().forEach(function (s) {
+    var head = s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0];
+    if (!head.length || head[0] !== 'timestamp') return;   // not one of ours
+
+    s.setFrozenRows(1);
+    s.getRange(1, 1, 1, head.length)
+      .setFontWeight('bold').setBackground('#1f2937').setFontColor('#ffffff')
+      .setVerticalAlignment('middle').setHorizontalAlignment('left');
+    s.setRowHeight(1, 34);
+
+    head.forEach(function (h, i) { if (widths[h]) s.setColumnWidth(i + 1, widths[h]); });
+
+    var body = s.getRange(2, 1, Math.max(s.getMaxRows() - 1, 1), head.length);
+    body.setVerticalAlignment('top').setFontSize(10);
+    body.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+    ['caption', 'description'].forEach(function (h) {
+      var i = head.indexOf(h);
+      if (i > -1) s.getRange(2, i + 1, s.getMaxRows() - 1).setWrap(true);
+    });
+    s.getRange(2, 1, s.getMaxRows() - 1).setNumberFormat('mmm d, yyyy  h:mm am/pm');
+
+    s.getBandings().forEach(function (b) { b.remove(); });
+    s.getRange(1, 1, s.getMaxRows(), head.length)
+      .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
+
+    var flag = head.indexOf('processed');
+    if (flag > -1) {
+      var col = s.getRange(2, flag + 1, s.getMaxRows() - 1);
+      s.setConditionalFormatRules([
+        rule_(col, 'error', '#fce8e6', '#a50e0e'),
+        rule_(col, 'no-places', '#fef7e0', '#b06000'),
+        rule_(col, 'yes', '#e6f4ea', '#137333')
+      ]);
+    }
+  });
+  SpreadsheetApp.flush();
+}
+
+function rule_(range, text, bg, fg) {
+  return SpreadsheetApp.newConditionalFormatRule()
+    .whenTextStartsWith(text).setBackground(bg).setFontColor(fg)
+    .setRanges([range]).build();
+}
+
 function installTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'processInbox') ScriptApp.deleteTrigger(t);

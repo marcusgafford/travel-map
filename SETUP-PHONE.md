@@ -109,6 +109,22 @@ pins. One worker, not two.
 Same for `setup()` — the GitHub robot already made your `Inbox` and `Pins` tabs. Nothing
 to do.
 
+## A7. Make the sheet readable (optional, 5 seconds)
+
+Straight out of the robot the tabs are raw — squished columns, captions running off the
+edge. There's a one-click fix.
+
+1. Go back to the Google Sheet tab and **reload the page** (F5). A new **Travel map**
+   menu appears at the top, next to Help.
+2. **Travel map** → **Format tabs**.
+
+Headers go dark and freeze, columns get sensible widths, descriptions wrap, and the
+Inbox `processed` column color-codes itself — green `yes`, orange `no-places`, red
+`error`. Run it again any time a new city tab shows up; it's cosmetic and safe to repeat.
+
+(The menu only appears if the script is properly attached to *this* sheet — so it also
+doubles as proof you pasted the code in the right place.)
+
 ---
 
 # Part B — the button (iOS Shortcut)
