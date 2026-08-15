@@ -123,12 +123,18 @@ async function appendSeen(title, row, url) {
 // ------------------------------------------------------------- the pieces
 
 /** yt-dlp reads the real description — this is why the job moved off Apps Script. */
-function caption(url) {
+async function caption(url) {
   const r = spawnSync('yt-dlp', ['--dump-json', '--no-warnings', '--skip-download', url],
     { encoding: 'utf8', maxBuffer: 1 << 27 });
-  if (r.status !== 0) throw new Error('yt-dlp: ' + String(r.stderr || '').trim().slice(0, 200));
-  const j = JSON.parse(r.stdout.split('\n')[0]);
-  return [j.description || j.title, j.uploader].filter(Boolean).join(' — ');
+  if (r.status === 0) {
+    const j = JSON.parse(r.stdout.split('\n')[0]);
+    return [j.description || j.title, j.uploader].filter(Boolean).join(' — ');
+  }
+  // yt-dlp can't read TikTok photo/slideshow posts. oEmbed can, and it's free.
+  const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error('yt-dlp: ' + String(r.stderr || '').trim().slice(0, 160));
+  const j = await res.json();
+  return [j.title, j.author_name].filter(Boolean).join(' — ');
 }
 
 async function claude(content, tools, max_tokens) {
@@ -217,7 +223,7 @@ async function main() {
     const url = String(inbox[n][1] || '').trim();
     if (!url) continue;
     try {
-      const cap = caption(url);
+      const cap = await caption(url);
       const places = await extractPlaces(cap);
       if (!places.length) {
         empty.push(url);
