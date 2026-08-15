@@ -16,7 +16,7 @@ var DUPE_METERS = 60;
 var INBOX = 'Inbox';
 var PINS = 'Pins';
 var PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'caption', 'place',
-                  'description', 'lat', 'lng', 'city'];
+                  'description', 'lat', 'lng', 'city', 'label'];
 var SEEN_COL = 3;            // seen_from, 1-based
 
 // ---------------------------------------------------------------- intake
@@ -292,7 +292,8 @@ function onOpen() {
  */
 function beautify() {
   var widths = { timestamp: 150, first_url: 200, seen_from: 200, caption: 320,
-    place: 200, description: 460, lat: 80, lng: 80, city: 150, url: 380, processed: 130 };
+    place: 200, description: 460, lat: 80, lng: 80, city: 150, label: 260,
+    url: 380, processed: 130 };
 
   // Drop the empty default tab and put the real ones first, so opening the file
   // shows data instead of a blank grid. ponytail: only deletes Sheet1 if untouched.

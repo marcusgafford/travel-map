@@ -15,7 +15,7 @@ const assert = require('node:assert');
 const MODEL = 'claude-sonnet-5';
 const DUPE_METERS = 60;
 const PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'caption', 'place',
-  'description', 'lat', 'lng', 'city'];
+  'description', 'lat', 'lng', 'city', 'label'];
 
 // ---------------------------------------------------------------- pure bits
 // Mirrors Code.gs. Kept duplicated on purpose: Code.gs has to stay a single
@@ -48,6 +48,13 @@ function findDupe(pins, g) {
     meters(p.lat, p.lng, g.lat, g.lng) <= DUPE_METERS) || null;
 }
 
+/** "Coffee shop" + "Clima comedor, Madrid, Spain" -> "Coffee shop - Clima comedor" */
+function label(category, place) {
+  const name = String(place).split(',')[0].trim();
+  const cat = String(category).replace(/[.\s]+$/, '').trim();
+  return cat ? `${cat} - ${name}` : name;
+}
+
 function parseArray(text) {
   const m = String(text).match(/\[[\s\S]*\]/);
   if (!m) return [];
@@ -73,7 +80,7 @@ async function sheets() {
 const ID = () => process.env.SHEET_ID;
 const A1 = (title, range) => `'${title.replace(/'/g, "''")}'!${range}`;
 
-async function get(title, range = 'A:I') {
+async function get(title, range = 'A:J') {
   const s = await sheets();
   const r = await s.spreadsheets.values.get({ spreadsheetId: ID(), range: A1(title, range) });
   return r.data.values || [];
@@ -82,7 +89,7 @@ async function get(title, range = 'A:I') {
 async function append(title, row) {
   const s = await sheets();
   await s.spreadsheets.values.append({
-    spreadsheetId: ID(), range: A1(title, 'A:I'),
+    spreadsheetId: ID(), range: A1(title, 'A:J'),
     valueInputOption: 'RAW', requestBody: { values: [row] },
   });
 }
@@ -170,6 +177,10 @@ const describe = (place, cap) => claude(
   'Reply with only the description, no preamble.',
   [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }], 1024);
 
+const categoryOf = (place) => claude(
+  `What kind of place is "${place}"? Reply with 1-3 words only, e.g. "Coffee shop", ` +
+  '"Tapas bar", "Museum", "Park". No punctuation, no sentence.', null, 32);
+
 async function geocode(q) {
   const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1' +
     `&email=${encodeURIComponent(process.env.NOMINATIM_EMAIL || '')}&q=${encodeURIComponent(q)}`;
@@ -227,7 +238,8 @@ async function savePlace(place, cap, url, pins, missed) {
   // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
   const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
   const row = [new Date().toISOString(), url, url, flat(cap), place,
-    flat(await describe(place, cap)), g.lat, g.lng, g.city];
+    flat(await describe(place, cap)), g.lat, g.lng, g.city,
+    label(await categoryOf(place), place)];
   await append('Pins', row);
   await append(await cityTab(g.city), row);
   pins.push({ row: 0, addr: norm(g.address), lat: g.lat, lng: g.lng, city: g.city });
@@ -287,6 +299,21 @@ async function main() {
   if (failed.length) process.exit(1);
 }
 
+/** Fill the label column on rows written before it existed. Idempotent. */
+async function relabel() {
+  for (const t of await titles()) {
+    const rows = await get(t);
+    if (!rows.length || rows[0][4] !== 'place') continue;        // Pins / city tabs only
+    for (let n = 1; n < rows.length; n++) {
+      if (rows[n][9] || !rows[n][4]) continue;                   // has one, or empty row
+      const text = label(await categoryOf(rows[n][4]), rows[n][4]);
+      await put(t, `J${n + 1}`, text);
+      console.log(`${t} row ${n + 1}: ${text}`);
+    }
+    if (rows[0][9] !== 'label') await put(t, 'J1', 'label');
+  }
+}
+
 /** One-shot repair: strip line breaks out of already-written rows. Idempotent. */
 async function flattenExisting() {
   const flat = (v) => (typeof v === 'string' ? v.replace(/\s*\n+\s*/g, ' ').trim() : v);
@@ -327,11 +354,14 @@ function selfcheck() {
   assert.ok(findDupe(pins, { address: 'x', lat: 38.7069, lng: -9.1459 }), 'coord dupe');
   assert.equal(findDupe(pins, { address: 'x', lat: 38.72, lng: -9.15 }), null);
 
-  assert.equal(A1("Paris-France", 'A:I'), "'Paris-France'!A:I");
+  assert.equal(A1("Paris-France", 'A:J'), "'Paris-France'!A:J");
+  assert.equal(label('Coffee shop', 'Clima comedor, Madrid, Spain'), 'Coffee shop - Clima comedor');
+  assert.equal(label('', 'Retiro Park, Madrid'), 'Retiro Park');
   console.log('self-check OK');
 }
 
 const fail = (e) => { console.error(e); process.exit(1); };
 if (process.argv.includes('--selfcheck')) selfcheck();
 else if (process.argv.includes('--flatten')) flattenExisting().catch(fail);
+else if (process.argv.includes('--relabel')) relabel().catch(fail);
 else main().catch(fail);
