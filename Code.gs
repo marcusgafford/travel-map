@@ -58,7 +58,8 @@ function processInbox() {
     var added = [], empty = [], failed = [], done = 0;
 
     for (var r = 1; r < rows.length && done < BATCH; r++) {
-      if (rows[r][2]) continue;                 // already processed
+      // `error:` rows retry themselves next run; anything else is done with.
+      if (rows[r][2] && String(rows[r][2]).indexOf('error:') !== 0) continue;
       if (Date.now() - started > TIME_BUDGET_MS) break;
       done++;
       var url = String(rows[r][1]).trim();

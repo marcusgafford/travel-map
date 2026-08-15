@@ -223,7 +223,9 @@ async function main() {
 
   const added = [], empty = [], failed = [];
   for (let n = 1; n < inbox.length; n++) {
-    if (inbox[n][2]) continue;                    // already processed
+    // `error:` rows retry themselves next run — a broken URL just re-errors and stays
+    // visible in the summary, which beats making you clear the cell by hand.
+    if (inbox[n][2] && !String(inbox[n][2]).startsWith('error:')) continue;
     const url = String(inbox[n][1] || '').trim();
     if (!url) continue;
     try {
