@@ -173,7 +173,9 @@ async function geocode(q) {
   const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1' +
     `&email=${encodeURIComponent(process.env.NOMINATIM_EMAIL || '')}&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: { 'user-agent': 'personal-travel-map/1.0' } });
-  if (!res.ok) return null;
+  // Don't swallow this — a blocked or rate-limited geocoder used to look identical
+  // to "place not found", so rows silently completed with zero pins.
+  if (!res.ok) throw new Error(`Nominatim ${res.status} for "${q}"`);
   const [r] = await res.json();
   if (!r) return null;
   const ad = r.address || {};
@@ -188,10 +190,10 @@ async function geocode(q) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function savePlace(place, cap, url, pins) {
+async function savePlace(place, cap, url, pins, missed) {
   await sleep(1000);                              // Nominatim: 1 req/sec
   const g = await geocode(place);
-  if (!g) return null;
+  if (!g) { missed.push(place); return null; }
 
   const hit = findDupe(pins, g);
   if (hit) {
@@ -219,16 +221,16 @@ async function main() {
   const meta = await (await sheets()).spreadsheets.get({ spreadsheetId: ID(), fields: 'properties.title' });
   const inbox = await get('Inbox', 'A:C');
   console.log(`reading "${meta.data.properties.title}" — ${Math.max(inbox.length - 1, 0)} inbox row(s)`);
-  console.log('DEBUG ' + JSON.stringify(inbox.slice(0, 5)));
   const pins = (await get('Pins')).slice(1)
     .filter((r) => r[6] || r[7])
     .map((r, i) => ({ row: i + 2, addr: norm(`${r[4]} ${r[8]}`), lat: +r[6], lng: +r[7], city: r[8] }));
 
-  const added = [], empty = [], failed = [];
+  const added = [], empty = [], failed = [], missed = [];
   for (let n = 1; n < inbox.length; n++) {
     // `error:` rows retry themselves next run — a broken URL just re-errors and stays
     // visible in the summary, which beats making you clear the cell by hand.
-    if (inbox[n][2] && !String(inbox[n][2]).startsWith('error:')) continue;
+    // FORCE=1 (workflow_dispatch input) reruns everything, ignoring the flags.
+    if (!process.env.FORCE && inbox[n][2] && !String(inbox[n][2]).startsWith('error:')) continue;
     const url = String(inbox[n][1] || '').trim();
     if (!url) continue;
     try {
@@ -240,7 +242,7 @@ async function main() {
         continue;
       }
       for (const p of places) {
-        const name = await savePlace(p, cap, url, pins);
+        const name = await savePlace(p, cap, url, pins, missed);
         if (name) added.push(name);
       }
       await put('Inbox', `C${n + 1}`, 'yes');
@@ -254,6 +256,7 @@ async function main() {
     `## Travel map: ${added.length} new pin(s)`, '',
     `**Added (${added.length}):** ${added.join(', ') || 'none'}`,
     `**No place found (${empty.length}):** ${empty.join(', ') || 'none'}`,
+    `**Could not be geocoded (${missed.length}):** ${missed.join(', ') || 'none'}`,
     `**Errors (${failed.length}):**`, ...failed.map((f) => `- ${f}`),
   ].join('\n');
   console.log(summary);

@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Reprocess every Inbox row, ignoring the processed flags'
+        type: boolean
+        default: false
 
 concurrency:
   group: process-inbox
@@ -26,3 +31,4 @@ jobs:
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           NOMINATIM_EMAIL: ${{ secrets.NOMINATIM_EMAIL }}
+          FORCE: ${{ inputs.force && '1' || '' }}
