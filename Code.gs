@@ -293,6 +293,15 @@ function beautify() {
   var widths = { timestamp: 150, first_url: 200, seen_from: 200, caption: 320,
     place: 200, description: 460, lat: 80, lng: 80, city: 150, url: 380, processed: 130 };
 
+  // Drop the empty default tab and put the real ones first, so opening the file
+  // shows data instead of a blank grid. ponytail: only deletes Sheet1 if untouched.
+  var blank = ss_().getSheetByName('Sheet1');
+  if (blank && blank.getLastRow() === 0 && ss_().getSheets().length > 1) ss_().deleteSheet(blank);
+  ['Inbox', 'Pins'].forEach(function (name) {
+    var s = ss_().getSheetByName(name);
+    if (s) { ss_().setActiveSheet(s); ss_().moveActiveSheet(1); }
+  });
+
   ss_().getSheets().forEach(function (s) {
     var head = s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0];
     if (!head.length || head[0] !== 'timestamp') return;   // not one of ours
