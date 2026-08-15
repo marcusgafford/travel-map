@@ -345,7 +345,8 @@ function onOpen() {
  */
 function beautify() {
   var widths = { place: 210, description: 480, lat: 90, lng: 90, city: 150, label: 260,
-    timestamp: 160, first_url: 190, seen_from: 190, url: 380, processed: 130 };
+    maps_url: 200, timestamp: 160, first_url: 190, seen_from: 190, url: 380,
+    processed: 130 };
 
   // Drop the empty default tab and put the real ones first, so opening the file
   // shows data instead of a blank grid. ponytail: only deletes Sheet1 if untouched.

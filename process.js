@@ -25,7 +25,7 @@ const UNRESOLVED = 'Unresolved';
 const UNRESOLVED_HEADER = ['place', 'description', 'first_url', 'timestamp'];
 // Order for tabs this job creates. Existing tabs are read by header NAME, so columns
 // can be rearranged in the sheet without touching any of this.
-const PIN_HEADER = ['place', 'description', 'lat', 'lng', 'city', 'label',
+const PIN_HEADER = ['place', 'description', 'lat', 'lng', 'city', 'label', 'maps_url',
   'timestamp', 'first_url', 'seen_from'];
 
 // ---------------------------------------------------------------- pure bits
@@ -77,6 +77,15 @@ function parseObj(text) {
   }
   return { description: String(text).trim(), address: '' };
 }
+
+/**
+ * Deep link into the real Google Maps app. With a Place ID it opens that exact
+ * business — photos, hours, and the app's own Save button, which is the only way to
+ * get something into a native Saved list (there is no API for writing those).
+ */
+const mapsUrl = ({ lat, lng, placeId }) =>
+  `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` +
+  (placeId ? `&query_place_id=${encodeURIComponent(placeId)}` : '');
 
 function parseArray(text) {
   const m = String(text).match(/\[[\s\S]*\]/);
@@ -278,7 +287,7 @@ async function placesLookup(q) {
     headers: {
       'content-type': 'application/json',
       'X-Goog-Api-Key': key,
-      'X-Goog-FieldMask': 'places.location,places.formattedAddress,places.types',
+      'X-Goog-FieldMask': 'places.id,places.location,places.formattedAddress,places.types',
     },
     body: JSON.stringify({ textQuery: q, maxResultCount: 1, languageCode: 'en' }),
   });
@@ -293,7 +302,7 @@ async function placesLookup(q) {
   await sleep(1000);                              // Nominatim: 1 req/sec
   return {
     lat: p.location.latitude, lng: p.location.longitude, address: p.formattedAddress,
-    city: await reverseCity(p.location.latitude, p.location.longitude),
+    placeId: p.id, city: await reverseCity(p.location.latitude, p.location.longitude),
   };
 }
 
@@ -303,12 +312,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function savePlace(place, cap, url, pins, missed, ix, parked) {
   await sleep(1000);                              // Nominatim: 1 req/sec
-  // Cheapest source first: OSM (free) -> Google Places (free tier) -> a paid web
-  // search for the street address, which we then geocode. Coordinates always come
-  // from a geocoder, never from the model.
-  let g = await geocode(place);
+  // Places first: it's the index behind Google Maps search, so it knows small venues
+  // by name and pins the actual storefront. OSM is the fallback (and the only source
+  // if no Places key is set) — it's strong on streets, weak on cafes, and will
+  // occasionally return a plausible-but-wrong street match. Last resort is a paid web
+  // search for the address. Coordinates always come from a geocoder, never the model.
+  let g = await placesLookup(place);
   let found = null;
-  if (!g) g = await placesLookup(place);
+  if (!g) g = await geocode(place);
   if (!g) {
     // The description from this same call is reused below instead of paid for twice.
     found = await research(place);
@@ -351,7 +362,7 @@ async function savePlace(place, cap, url, pins, missed, ix, parked) {
   const description = flat((found || await research(place)).description);
   const values = {
     timestamp: new Date().toISOString(), first_url: url, seen_from: url, place,
-    description, lat: g.lat, lng: g.lng, city: g.city,
+    description, lat: g.lat, lng: g.lng, city: g.city, maps_url: mapsUrl(g),
     label: label(await categoryOf(place, description), place),
   };
   await append('Pins', rowFor(ix, values));
@@ -444,10 +455,22 @@ async function relabel() {
   for (const t of await titles()) {
     const rows = await get(t);
     const ix = ixOf(rows[0]);
-    if (ix.place === undefined || ix.label === undefined) continue;
+    if (ix.place === undefined) continue;
+    // Older tabs predate maps_url — append the header rather than making you add it.
+    if (ix.maps_url === undefined && ix.lat !== undefined) {
+      ix.maps_url = rows[0].length;
+      await put(t, `${colOf(ix.maps_url)}1`, 'maps_url');
+      console.log(`${t}: added a maps_url column`);
+    }
     for (let n = 1; n < rows.length; n++) {
+      if (!rows[n][ix.place]) continue;
+      // Costs nothing — derived from coordinates we already have.
+      if (ix.maps_url !== undefined && !rows[n][ix.maps_url] && rows[n][ix.lat]) {
+        await put(t, `${colOf(ix.maps_url)}${n + 1}`,
+          mapsUrl({ lat: rows[n][ix.lat], lng: rows[n][ix.lng] }));
+      }
       // FORCE rewrites labels that are already there; otherwise only fills blanks.
-      if ((rows[n][ix.label] && !process.env.FORCE) || !rows[n][ix.place]) continue;
+      if (ix.label === undefined || (rows[n][ix.label] && !process.env.FORCE)) continue;
       const text = label(
         await categoryOf(rows[n][ix.place], rows[n][ix.description] || ''), rows[n][ix.place]);
       await put(t, `${colOf(ix.label)}${n + 1}`, text);
@@ -510,6 +533,11 @@ function selfcheck() {
     { description: 'A cafe.', address: '' });
   assert.deepEqual(parseObj('just prose, no json'),
     { description: 'just prose, no json', address: '' });
+
+  assert.equal(mapsUrl({ lat: 40.42, lng: -3.7 }),
+    'https://www.google.com/maps/search/?api=1&query=40.42,-3.7');
+  assert.equal(mapsUrl({ lat: 40.42, lng: -3.7, placeId: 'ChIJx/y' }),
+    'https://www.google.com/maps/search/?api=1&query=40.42,-3.7&query_place_id=ChIJx%2Fy');
   assert.equal(label('Coffee shop', 'Clima comedor, Madrid, Spain'), 'Coffee shop - Clima comedor');
   assert.equal(label('', 'Retiro Park, Madrid'), 'Retiro Park');
   console.log('self-check OK');
