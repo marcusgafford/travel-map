@@ -167,6 +167,8 @@ Steps 1–3 and 5–7 of the setup still apply; you skip step 4 (`installTrigger
    | `SHEET_ID` | the `/d/<this>/edit` chunk of the Sheet URL |
    | `NOMINATIM_EMAIL` | your email |
 
+   Click-by-click instructions for getting each of these: [SECRETS.md](SECRETS.md).
+
 4. **Delete the Apps Script trigger** (Triggers → bin icon) so only one runs.
 5. Actions tab → *process inbox* → **Run workflow** to try it now. It also runs every
    15 minutes on its own.
