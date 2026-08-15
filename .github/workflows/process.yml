@@ -21,6 +21,10 @@ on:
         description: 'Repair only: rewrite every description from a fresh web search'
         type: boolean
         default: false
+      dropcaption:
+        description: 'Migration only: delete the caption column from existing tabs'
+        type: boolean
+        default: false
 
 concurrency:
   group: process-inbox
@@ -37,7 +41,7 @@ jobs:
       - run: pipx install yt-dlp
       - run: npm install --no-audit --no-fund
       - run: node process.js --selfcheck
-      - run: node process.js ${{ inputs.flatten && '--flatten' || '' }} ${{ inputs.relabel && '--relabel' || '' }} ${{ inputs.redescribe && '--redescribe' || '' }}
+      - run: node process.js ${{ inputs.flatten && '--flatten' || '' }} ${{ inputs.relabel && '--relabel' || '' }} ${{ inputs.redescribe && '--redescribe' || '' }} ${{ inputs.dropcaption && '--dropcaption' || '' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}

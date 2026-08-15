@@ -16,8 +16,8 @@ const MODEL = 'claude-sonnet-5';
 const DUPE_METERS = 60;
 const BROAD = new Set(['city', 'town', 'village', 'municipality', 'county', 'state',
   'province', 'region', 'country', 'continent', 'administrative', 'postcode']);
-const PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'caption', 'place',
-  'description', 'lat', 'lng', 'city', 'label'];
+const PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'place', 'description',
+  'lat', 'lng', 'city', 'label'];
 
 // ---------------------------------------------------------------- pure bits
 // Mirrors Code.gs. Kept duplicated on purpose: Code.gs has to stay a single
@@ -82,7 +82,7 @@ async function sheets() {
 const ID = () => process.env.SHEET_ID;
 const A1 = (title, range) => `'${title.replace(/'/g, "''")}'!${range}`;
 
-async function get(title, range = 'A:J') {
+async function get(title, range = 'A:I') {
   const s = await sheets();
   const r = await s.spreadsheets.values.get({ spreadsheetId: ID(), range: A1(title, range) });
   return r.data.values || [];
@@ -91,7 +91,7 @@ async function get(title, range = 'A:J') {
 async function append(title, row) {
   const s = await sheets();
   await s.spreadsheets.values.append({
-    spreadsheetId: ID(), range: A1(title, 'A:J'),
+    spreadsheetId: ID(), range: A1(title, 'A:I'),
     valueInputOption: 'RAW', requestBody: { values: [row] },
   });
 }
@@ -244,7 +244,7 @@ async function savePlace(place, cap, url, pins, missed) {
     await appendSeen('Pins', hit.row, url);
     if ((await titles()).includes(hit.city)) {
       const rows = await get(hit.city);
-      const i = rows.findIndex((r, n) => n > 0 && meters(+r[6], +r[7], hit.lat, hit.lng) <= 1);
+      const i = rows.findIndex((r, n) => n > 0 && meters(+r[5], +r[6], hit.lat, hit.lng) <= 1);
       if (i > 0) await appendSeen(hit.city, i + 1, url);
     }
     return null;
@@ -252,7 +252,7 @@ async function savePlace(place, cap, url, pins, missed) {
 
   // Line breaks inside a cell break My Maps' sheet importer, so flatten them.
   const flat = (s) => String(s).replace(/\s*\n+\s*/g, ' ').trim();
-  const row = [new Date().toISOString(), url, url, flat(cap), place,
+  const row = [new Date().toISOString(), url, url, place,
     flat(await describe(place)), g.lat, g.lng, g.city,
     label(await categoryOf(place), place)];
   await append('Pins', row);
@@ -269,8 +269,8 @@ async function main() {
   const inbox = await get('Inbox', 'A:C');
   console.log(`reading "${meta.data.properties.title}" — ${Math.max(inbox.length - 1, 0)} inbox row(s)`);
   const pins = (await get('Pins')).slice(1)
-    .filter((r) => r[6] || r[7])
-    .map((r, i) => ({ row: i + 2, addr: norm(`${r[4]} ${r[8]}`), lat: +r[6], lng: +r[7], city: r[8] }));
+    .filter((r) => r[5] || r[6])
+    .map((r, i) => ({ row: i + 2, addr: norm(`${r[3]} ${r[7]}`), lat: +r[5], lng: +r[6], city: r[7] }));
 
   const added = [], empty = [], failed = [], missed = [];
   for (let n = 1; n < inbox.length; n++) {
@@ -314,15 +314,31 @@ async function main() {
   if (failed.length) process.exit(1);
 }
 
+/** One-shot migration: delete the old caption column (D) from pin tabs. Idempotent. */
+async function dropCaption() {
+  const s = await sheets();
+  const meta = await s.spreadsheets.get({ spreadsheetId: ID(), fields: 'sheets.properties(sheetId,title)' });
+  for (const { properties: { sheetId, title } } of meta.data.sheets) {
+    const head = (await get(title, 'A1:J1'))[0] || [];
+    if (head[3] !== 'caption') { console.log(`${title}: nothing to drop`); continue; }
+    await s.spreadsheets.batchUpdate({
+      spreadsheetId: ID(),
+      requestBody: { requests: [{ deleteDimension: { range: {
+        sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 } } }] },
+    });
+    console.log(`${title}: dropped the caption column`);
+  }
+}
+
 /** Rewrite every description from a fresh web search, ignoring the video caption. */
 async function redescribe() {
   for (const t of await titles()) {
     const rows = await get(t);
-    if (!rows.length || rows[0][4] !== 'place') continue;        // Pins / city tabs only
+    if (!rows.length || rows[0][3] !== 'place') continue;        // Pins / city tabs only
     for (let n = 1; n < rows.length; n++) {
-      if (!rows[n][4]) continue;
-      const text = String(await describe(rows[n][4])).replace(/\s*\n+\s*/g, ' ').trim();
-      await put(t, `F${n + 1}`, text);
+      if (!rows[n][3]) continue;
+      const text = String(await describe(rows[n][3])).replace(/\s*\n+\s*/g, ' ').trim();
+      await put(t, `E${n + 1}`, text);
       console.log(`${t} row ${n + 1}: ${text.slice(0, 90)}`);
     }
   }
@@ -332,14 +348,14 @@ async function redescribe() {
 async function relabel() {
   for (const t of await titles()) {
     const rows = await get(t);
-    if (!rows.length || rows[0][4] !== 'place') continue;        // Pins / city tabs only
+    if (!rows.length || rows[0][3] !== 'place') continue;        // Pins / city tabs only
     for (let n = 1; n < rows.length; n++) {
-      if (rows[n][9] || !rows[n][4]) continue;                   // has one, or empty row
-      const text = label(await categoryOf(rows[n][4]), rows[n][4]);
-      await put(t, `J${n + 1}`, text);
+      if (rows[n][8] || !rows[n][3]) continue;                   // has one, or empty row
+      const text = label(await categoryOf(rows[n][3]), rows[n][3]);
+      await put(t, `I${n + 1}`, text);
       console.log(`${t} row ${n + 1}: ${text}`);
     }
-    if (rows[0][9] !== 'label') await put(t, 'J1', 'label');
+    if (rows[0][8] !== 'label') await put(t, 'I1', 'label');
   }
 }
 
@@ -383,7 +399,7 @@ function selfcheck() {
   assert.ok(findDupe(pins, { address: 'x', lat: 38.7069, lng: -9.1459 }), 'coord dupe');
   assert.equal(findDupe(pins, { address: 'x', lat: 38.72, lng: -9.15 }), null);
 
-  assert.equal(A1("Paris-France", 'A:J'), "'Paris-France'!A:J");
+  assert.equal(A1("Paris-France", 'A:I'), "'Paris-France'!A:I");
   assert.equal(label('Coffee shop', 'Clima comedor, Madrid, Spain'), 'Coffee shop - Clima comedor');
   assert.equal(label('', 'Retiro Park, Madrid'), 'Retiro Park');
   console.log('self-check OK');
@@ -394,4 +410,5 @@ if (process.argv.includes('--selfcheck')) selfcheck();
 else if (process.argv.includes('--flatten')) flattenExisting().catch(fail);
 else if (process.argv.includes('--relabel')) relabel().catch(fail);
 else if (process.argv.includes('--redescribe')) redescribe().catch(fail);
+else if (process.argv.includes('--dropcaption')) dropCaption().catch(fail);
 else main().catch(fail);

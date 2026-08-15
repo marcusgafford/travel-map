@@ -17,8 +17,8 @@ var BROAD = ['city', 'town', 'village', 'municipality', 'county', 'state', 'prov
 
 var INBOX = 'Inbox';
 var PINS = 'Pins';
-var PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'caption', 'place',
-                  'description', 'lat', 'lng', 'city', 'label'];
+var PIN_HEADER = ['timestamp', 'first_url', 'seen_from', 'place', 'description',
+                  'lat', 'lng', 'city', 'label'];
 var SEEN_COL = 3;            // seen_from, 1-based
 
 // ---------------------------------------------------------------- intake
@@ -107,7 +107,7 @@ function savePlace_(place, caption, url, pins) {
   }
 
   var desc = describe_(place);
-  var row = [new Date(), url, url, caption, place, desc, g.lat, g.lng, g.city];
+  var row = [new Date(), url, url, place, desc, g.lat, g.lng, g.city];
   tab_(PINS).appendRow(row);
   cityTab_(g.city).appendRow(row);
   pins.push({ row: 0, addr: norm_(g.address), lat: g.lat, lng: g.lng, city: g.city });
@@ -223,8 +223,8 @@ function findDupe_(pins, g) {
 function loadPins_() {
   var v = tab_(PINS).getDataRange().getValues(), out = [];
   for (var i = 1; i < v.length; i++) {
-    if (!v[i][6] && !v[i][7]) continue;
-    out.push({ row: i + 1, addr: norm_(v[i][4] + ' ' + v[i][8]), lat: +v[i][6], lng: +v[i][7], city: v[i][8] });
+    if (!v[i][5] && !v[i][6]) continue;
+    out.push({ row: i + 1, addr: norm_(v[i][3] + ' ' + v[i][7]), lat: +v[i][5], lng: +v[i][6], city: v[i][7] });
   }
   return out;
 }
@@ -232,7 +232,7 @@ function loadPins_() {
 function findRow_(sheet, lat, lng) {
   var v = sheet.getDataRange().getValues();
   for (var i = 1; i < v.length; i++) {
-    if (meters_(+v[i][6], +v[i][7], lat, lng) <= 1) return i + 1;
+    if (meters_(+v[i][5], +v[i][6], lat, lng) <= 1) return i + 1;
   }
   return 0;
 }
@@ -301,7 +301,7 @@ function onOpen() {
  * ponytail: manual, same as the My Maps reimport. Nothing here affects the data.
  */
 function beautify() {
-  var widths = { timestamp: 150, first_url: 200, seen_from: 200, caption: 320,
+  var widths = { timestamp: 150, first_url: 200, seen_from: 200,
     place: 200, description: 460, lat: 80, lng: 80, city: 150, label: 260,
     url: 380, processed: 130 };
 
@@ -329,7 +329,7 @@ function beautify() {
     var body = s.getRange(2, 1, Math.max(s.getMaxRows() - 1, 1), head.length);
     body.setVerticalAlignment('top').setFontSize(10);
     body.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-    ['caption', 'description'].forEach(function (h) {
+    ['description'].forEach(function (h) {
       var i = head.indexOf(h);
       if (i > -1) s.getRange(2, i + 1, s.getMaxRows() - 1).setWrap(true);
     });
