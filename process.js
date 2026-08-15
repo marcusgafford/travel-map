@@ -372,7 +372,8 @@ async function flattenExisting() {
   const flat = (v) => (typeof v === 'string' ? v.replace(/\s*\n+\s*/g, ' ').trim() : v);
   for (const t of await titles()) {
     const rows = await get(t);
-    if (!rows.length || rows[0][0] !== 'timestamp') continue;      // not one of ours
+    const ix = ixOf(rows[0]);
+    if (ix.place === undefined && ix.url === undefined) continue;  // not one of ours
     const width = rows[0].length;
     const out = rows.map((r) => Array.from({ length: width }, (_, i) => flat(r[i] ?? '')));
     if (JSON.stringify(out) === JSON.stringify(rows)) { console.log(`${t}: already clean`); continue; }

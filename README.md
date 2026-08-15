@@ -2,18 +2,26 @@
 
 Share a TikTok → a pin shows up in Google My Maps, with a description.
 
-No server. Intake is a Google Apps Script Web App (instant, free); processing is a
-time-driven trigger on the same script that runs every 15 minutes.
+No server, no account, no subscription. Intake is a Google Apps Script Web App
+(instant, free); processing runs every 15 minutes on a schedule — either an Apps
+Script trigger or a GitHub Actions workflow. Pick one.
+
+- **[SECRETS.md](SECRETS.md)** — plain-English walkthrough for every key and secret.
+- **[SETUP-PHONE.md](SETUP-PHONE.md)** — same, for the Web App and the iOS Shortcut.
+
+New to this? Read those two rather than the setup below; they say the same things with
+every click named.
 
 ```
 iOS Shortcut ──POST──▶ Web App ──▶ Inbox tab
                                       │  (every 15 min)
                                       ▼
-                       caption (TikTok oEmbed)
-                       → Claude: extract places
+                       caption (yt-dlp / TikTok oEmbed)
+                       → Claude: extract places worth pinning
                        → Nominatim: geocode each
                        → dedupe by location
                        → Claude + web_search: description
+                       → category from that description
                        → Pins tab + per-city tab
                                       │  (manual tap)
                                       ▼
@@ -38,8 +46,20 @@ Project Settings → Script Properties → add three:
 ## 3. Create the tabs
 
 Run `setup()` once from the editor (authorize when prompted). It creates/headers
-`Inbox` (timestamp, url, processed) and `Pins` (timestamp, first_url, seen_from,
-caption, place, description, lat, lng, city).
+`Inbox` (timestamp, url, processed) and `Pins`:
+
+| column | what's in it |
+|---|---|
+| `place` | the place as extracted, e.g. `Junta cafe, Madrid, Spain` |
+| `description` | 1-2 sentences written from a live web search |
+| `lat` / `lng` | coordinates from OpenStreetMap — what My Maps positions by |
+| `city` | which city tab it belongs to |
+| `label` | `Coffee shop - Junta cafe` — use this as the My Maps title |
+| `timestamp` | when the pin was added |
+| `first_url` / `seen_from` | the video it came from, and every video that has mentioned it |
+
+**Columns are read by header name, not position** — rearrange them however you like.
+Renaming or deleting a header is what breaks it.
 
 City tabs are created automatically the first time a city appears, with the same
 columns. They're named `City-Country` (`Lisbon-Portugal`, `Paris-Texas` vs
@@ -74,15 +94,17 @@ Copy the `/exec` URL. "Anyone" is required (the Shortcut isn't logged in) — th
 Shortcuts app → new shortcut → ⓘ → **Show in Share Sheet**, accept types
 **URLs** and **Text**.
 
-1. **Get Contents of URL**
+1. **Get URLs from Input** — pulls the link out whether the share hands over a bare
+   URL or a sentence containing one.
+2. **Get Contents of URL**
    - URL: your `/exec` URL
    - Method: `POST`
    - Request Body: `JSON`
-     - `url` (Text) → `Shortcut Input`
+     - `url` (Text) → the `URLs` variable from step 1
      - `secret` (Text) → your `SHARED_SECRET`
-2. **Get Dictionary Value** → `ok` from the previous result
-3. **If** it *has any value* → **Show Notification** "Saved"
-   **Otherwise** → **Show Notification** "Failed"
+3. **Show Notification** → the `Contents of URL` variable. It shows the reply verbatim
+   (`{"ok":true}`, or `{"ok":false,"error":"bad secret"}`), which beats a ✅ that can
+   lie to you.
 
 Name it something like "Save Place". Now sharing a TikTok → Save Place drops it in
 the Inbox.
@@ -91,8 +113,9 @@ the Inbox.
 
 1. mymaps.google.com → Create a new map.
 2. Add layer → Import → Google Drive → pick your Sheet → pick a **city tab**.
-3. Columns: `lat` + `lng` for position, `place` for the title. It'll offer
-   `description` for the info window — take it.
+3. Columns: `lat` + `lng` for position, `label` for the title, `description` for the
+   info window. You can't change these after importing — delete the layer and re-import
+   if you pick wrong.
 4. Repeat per city (one layer per city; My Maps caps at 10 layers per map).
 5. When new pins land, open the layer's ⋮ menu → **Reimport and merge**.
 
@@ -113,8 +136,9 @@ its coordinates are within 60m. On a match nothing new is written — the source
 appended to `seen_from` on the existing row (in both `Pins` and the city tab).
 
 The Inbox `processed` column is separate: it only records whether a URL has been run
-at all. Values are `yes`, `no-places` (nothing geocodable in the caption), or
-`error: …`. Filter for the latter two to see what needs a look.
+at all. Values are `yes`, `no-places` (nothing worth pinning in the caption), or
+`error: …`. Filter for the latter two to see what needs a look. `error:` rows retry
+themselves on the next run.
 
 ## Notifications
 
@@ -213,3 +237,7 @@ If a caption never names the place, `yt-dlp` can already hand you the media —
 `yt-dlp -o - <url> | ffmpeg -i - -vf fps=1/3 frame_%03d.jpg` — and those frames can go
 to Claude as image blocks in the extraction call. That's the reason this variant exists;
 nothing else in the pipeline has to change to add it.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

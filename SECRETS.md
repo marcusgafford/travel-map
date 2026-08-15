@@ -29,7 +29,7 @@ email it, don't put it in the spreadsheet, don't paste it into a chat.
 This one's free. The free map-address service (OpenStreetMap) just wants to know who's
 asking, in case something goes wrong.
 
-Write down your email address. That's it. Example: `marcusgafford24@gmail.com`
+Write down your email address. That's it. Example: `you@example.com`
 
 ---
 

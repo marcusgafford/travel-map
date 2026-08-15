@@ -319,9 +319,8 @@ function onOpen() {
  * ponytail: manual, same as the My Maps reimport. Nothing here affects the data.
  */
 function beautify() {
-  var widths = { timestamp: 150, first_url: 200, seen_from: 200,
-    place: 200, description: 460, lat: 80, lng: 80, city: 150, label: 260,
-    url: 380, processed: 130 };
+  var widths = { place: 210, description: 480, lat: 90, lng: 90, city: 150, label: 260,
+    timestamp: 160, first_url: 190, seen_from: 190, url: 380, processed: 130 };
 
   // Drop the empty default tab and put the real ones first, so opening the file
   // shows data instead of a blank grid. ponytail: only deletes Sheet1 if untouched.
@@ -334,8 +333,12 @@ function beautify() {
 
   ss_().getSheets().forEach(function (s) {
     var head = s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0];
-    if (!head.length || head[0] !== 'timestamp') return;   // not one of ours
+    var ix = {};
+    head.forEach(function (h, i) { ix[String(h).trim()] = i; });
+    // By name, never by position — the columns get rearranged.
+    if (ix.place === undefined && ix.url === undefined) return;
 
+    var rows = Math.max(s.getMaxRows() - 1, 1);
     s.setFrozenRows(1);
     s.getRange(1, 1, 1, head.length)
       .setFontWeight('bold').setBackground('#1f2937').setFontColor('#ffffff')
@@ -344,22 +347,32 @@ function beautify() {
 
     head.forEach(function (h, i) { if (widths[h]) s.setColumnWidth(i + 1, widths[h]); });
 
-    var body = s.getRange(2, 1, Math.max(s.getMaxRows() - 1, 1), head.length);
-    body.setVerticalAlignment('top').setFontSize(10);
-    body.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-    ['description'].forEach(function (h) {
-      var i = head.indexOf(h);
-      if (i > -1) s.getRange(2, i + 1, s.getMaxRows() - 1).setWrap(true);
+    var body = s.getRange(2, 1, rows, head.length);
+    body.setVerticalAlignment('top').setFontSize(10)
+      .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+
+    if (ix.description !== undefined) s.getRange(2, ix.description + 1, rows).setWrap(true);
+    if (ix.label !== undefined) s.getRange(2, ix.label + 1, rows).setFontWeight('bold');
+    if (ix.timestamp !== undefined) {
+      s.getRange(2, ix.timestamp + 1, rows).setNumberFormat('mmm d, yyyy  h:mm am/pm')
+        .setFontColor('#80868b');
+    }
+    ['lat', 'lng'].forEach(function (h) {
+      if (ix[h] !== undefined) {
+        s.getRange(2, ix[h] + 1, rows).setNumberFormat('0.000000')
+          .setHorizontalAlignment('right').setFontColor('#80868b');
+      }
     });
-    s.getRange(2, 1, s.getMaxRows() - 1).setNumberFormat('mmm d, yyyy  h:mm am/pm');
+    ['first_url', 'seen_from'].forEach(function (h) {
+      if (ix[h] !== undefined) s.getRange(2, ix[h] + 1, rows).setFontColor('#80868b');
+    });
 
     s.getBandings().forEach(function (b) { b.remove(); });
     s.getRange(1, 1, s.getMaxRows(), head.length)
       .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
 
-    var flag = head.indexOf('processed');
-    if (flag > -1) {
-      var col = s.getRange(2, flag + 1, s.getMaxRows() - 1);
+    if (ix.processed !== undefined) {
+      var col = s.getRange(2, ix.processed + 1, rows);
       s.setConditionalFormatRules([
         rule_(col, 'error', '#fce8e6', '#a50e0e'),
         rule_(col, 'no-places', '#fef7e0', '#b06000'),
