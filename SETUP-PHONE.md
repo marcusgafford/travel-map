@@ -166,30 +166,43 @@ picky.
 
 Without this the shortcut does its thing silently and you never know if it landed.
 
-1. Add action → search **Get Dictionary Value**. It'll say "Get *Value* for *key* in
-   *Contents of URL*". Type `error` in the key box.
-2. Add action → search **If**. It'll say "If *Dictionary Value*". Set the condition to
-   **has any value**.
-3. *Inside* the If (between "If" and "Otherwise"): add **Show Notification**, text:
-   `❌ Not saved`
-4. *Under* Otherwise: add another **Show Notification**, text: `✅ Saved`
-5. Tap **Done** to save the shortcut.
+1. Add action → search **Show Notification**.
+2. Tap the body/text box, then tap the **variable** suggestion **Contents of URL** —
+   a blue bubble, not typed letters.
+3. Tap **Done** to save the shortcut.
 
-The doorbell only sends back an `error` when something went wrong, so "no error" means
-it landed.
+That's one action, and it shows you the doorbell's actual answer:
 
-Your finished shortcut is 5 actions, in this order:
+- `{"ok":true}` → it worked
+- `{"ok":false,"error":"bad secret"}` → your two passwords don't match
+- `{"ok":false,"error":"no url"}` → the link didn't make it through
+
+Your finished shortcut is 3 actions:
 
 ```
 Get URLs from Input
 Get Contents of URL          (POST, JSON, url + secret)
-Get Dictionary Value  error
-If  has any value
-     Show Notification  ❌ Not saved
-Otherwise
-     Show Notification  ✅ Saved
-End If
+Show Notification            Contents of URL
 ```
+
+<details>
+<summary>Optional: the prettier ✅/❌ version</summary>
+
+Nicer to look at, four times as fiddly. Only bother once the plain one works.
+
+1. Add action → **Get Dictionary Value**. Make sure it reads "…in **Contents of URL**" —
+   tap that input and pick `Contents of URL` if it grabbed something else. Key: `error`
+2. Add action → **If** → tap the input, pick **Dictionary Value** → condition:
+   **has any value**
+3. Add **Show Notification** `❌ Not saved`, then another **Show Notification** `✅ Saved`
+
+New actions always land at the *bottom*, under "End If". You have to drag them into
+place with the ≡ handle on the right: the ❌ one goes between `If` and `Otherwise`, the
+✅ one between `Otherwise` and `End If`.
+
+The doorbell only sends back an `error` key when something went wrong, so "no error"
+means it landed.
+</details>
 
 ---
 
