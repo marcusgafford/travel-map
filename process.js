@@ -101,16 +101,18 @@ async function titles() {
   return r.data.sheets.map((x) => x.properties.title);
 }
 
-async function cityTab(city) {
-  if ((await titles()).includes(city)) return city;
+async function ensureTab(title, header) {
+  if ((await titles()).includes(title)) return title;
   const s = await sheets();
   await s.spreadsheets.batchUpdate({
     spreadsheetId: ID(),
-    requestBody: { requests: [{ addSheet: { properties: { title: city } } }] },
+    requestBody: { requests: [{ addSheet: { properties: { title } } }] },
   });
-  await append(city, PIN_HEADER);
-  return city;
+  await append(title, header);
+  return title;
 }
+
+const cityTab = (city) => ensureTab(city, PIN_HEADER);
 
 async function appendSeen(title, row, url) {
   const cell = (await get(title, `C${row}:C${row}`))[0]?.[0] || '';
@@ -201,6 +203,9 @@ async function savePlace(place, cap, url, pins) {
 }
 
 async function main() {
+  await ensureTab('Inbox', ['timestamp', 'url', 'processed']);
+  await ensureTab('Pins', PIN_HEADER);
+
   const inbox = await get('Inbox', 'A:C');
   const pins = (await get('Pins')).slice(1)
     .filter((r) => r[6] || r[7])
