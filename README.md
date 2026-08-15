@@ -156,7 +156,10 @@ run picks them up, 15 at a time. Column A can be blank too.
   a Meta developer token now, so there's no free caption fetch. Those rows fail with an
   oEmbed error rather than silently doing nothing. The GitHub Actions version below
   uses `yt-dlp` and handles both platforms.
-- **My Maps reimport is manual**, not a live sync.
+- **My Maps reimport is manual**, not a live sync. There is no public API for writing
+  into My Maps or into Google Maps' native saved lists, so nothing can push pins for
+  you. The `maps_url` column is the other route in: tap it, then tap Save in the
+  Google Maps app to file the genuine entry into one of your own lists.
 - **Web search costs a little.** Geocoding and captions are free; the description
   call runs one web search per *extracted place*, not per video. Trivial at personal
   volume, not zero.
